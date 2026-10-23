@@ -7,7 +7,9 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-BASE_URL = "https://fapi.binance.com/fapi/v1/klines"
+# Regional public spot-market endpoint. Binance USD-M Futures returned HTTP 451
+# from the current Render deployment, so use Binance.US public spot klines.
+BASE_URL = "https://api.binance.us/api/v3/klines"
 SYMBOLS = [s.strip().upper() for s in os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT").split(",") if s.strip()]
 RISK_PCT = float(os.getenv("RISK_PCT", "0.01"))
 MIN_RR = float(os.getenv("MIN_RR", "2.0"))
@@ -128,7 +130,7 @@ def detect_signal(symbol: str):
 def format_signal(signal: dict) -> str:
     side = "🟢 LONG" if signal["direction"] == "LONG" else "🔴 SHORT"
     lines = [
-        "⚡ BGM TRADING SIGNALS", "", f"{side} | {signal['symbol']} (Binance USDⓈ-M)",
+        "⚡ BGM TRADING SIGNALS", "", f"{side} | {signal['symbol']} (Binance.US Spot)",
         f"Entrada de referencia: {signal['entry']:.6g}",
         f"Stop Loss: {signal['stop']:.6g}", f"Take Profit: {signal['target']:.6g}",
         f"Relación riesgo/beneficio: 1:{signal['rr']:.1f}",
@@ -136,12 +138,12 @@ def format_signal(signal: dict) -> str:
     ]
     if signal["risk_amount"] > 0:
         lines += [f"Riesgo estimado: {signal['risk_amount']:.2f} USDT",
-                  f"Tamaño estimado: {signal['qty']:.6g} {signal['symbol'].replace('USDT', '')}",
+                  f"Tamaño teórico: {signal['qty']:.6g} {signal['symbol'].replace('USDT', '')}",
                   f"Notional aproximado: {signal['notional']:.2f} USDT"]
     lines += [
         f"Vela de confirmación: {signal['candle_time']}", "",
         "Filtros: tendencia H4 + EMA20/50/200 H1 + barrido de liquidez + ruptura estructural + volumen.",
-        "⚠️ Señal informativa; no garantiza resultados. Verifica spread, comisiones y slippage. No es una orden automática."
+        "⚠️ Señal informativa basada en mercado spot; no garantiza resultados. Verifica comisiones y slippage. No es una orden automática."
     ]
     return "\n".join(lines)
 
