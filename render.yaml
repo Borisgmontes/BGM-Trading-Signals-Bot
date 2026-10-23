@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: bgm-trading-signals
+    runtime: python
+    repo: https://github.com/Borisgmontes/BGM-Trading-Signals-Bot
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    plan: starter
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
+      - key: RISK_PCT
+        value: "0.01"
+      - key: POLL_SECONDS
+        value: "300"
