@@ -126,5 +126,6 @@ def listener():
         except Exception: log.exception("Telegram polling failed"); time.sleep(5)
 if __name__=="__main__":
     if bot: threading.Thread(target=listener,daemon=True).start()
+    ready["scanner_started"]=True
     threading.Thread(target=scanner,daemon=True).start()
     HTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),Handler).serve_forever()
