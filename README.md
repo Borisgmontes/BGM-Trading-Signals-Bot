@@ -1,36 +1,22 @@
 # BGM Trading Signals Bot
 
-Bot educativo de señales para Binance USDⓈ-M Futures usando únicamente datos públicos. No coloca órdenes.
+Bot educativo multiusuario de alertas de mercado por Telegram. No coloca órdenes.
 
-## Estrategia inicial
-- Activos por defecto: BTCUSDT, ETHUSDT, SOLUSDT y BNBUSDT.
-- Contexto H4: precio frente a EMA200 y relación EMA20/EMA50.
-- Confirmación H1: EMA20/50/200 alineadas, barrido de liquidez reciente, ruptura estructural y volumen mínimo.
-- Solo velas H1 cerradas.
-- Entrada de referencia al cierre de la vela de confirmación.
-- Stop detrás del extremo del barrido, con margen de 0.2 ATR.
-- Objetivo mínimo 2R.
-- Riesgo nominal configurado al 1% por operación.
-- Solo envía LONG/SHORT válidos; las demás condiciones quedan como NO TRADE en logs.
-- Deduplicación por vela H1 y registro local en signal_state.json.
+## Comandos
+- `/start`: registra tu chat privado.
+- `/help`: muestra ayuda.
+- `/new NOMBRE ACTIVO TF ENTRADA TENDENCIA CONFIRMACION STOP OBJETIVO_R RIESGO_PCT`: crea subestrategia.
+- `/list`: lista las tuyas.
+- `/on ID` y `/off ID`: activar o pausar una subestrategia propia.
+- `/delete ID`: borrar una subestrategia propia.
+- `/test`: alerta simulada.
 
-## Variables de entorno obligatorias
-- BOT_TOKEN: token del bot de Telegram.
-- CHAT_ID: chat o canal al que el bot puede enviar mensajes.
+Ejemplo: `/new BTC_Ruptura BTCUSDT 5m breakout ema200 volume atr 2 0.5`
 
-## Variables opcionales
-- SYMBOLS: lista separada por comas. Default: BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT
-- RISK_PCT: riesgo nominal por operación. Default: 0.01 (1%).
-- MIN_RR: relación mínima riesgo/beneficio. Default: 2.0.
-- ACCOUNT_EQUITY_USDT: equity de referencia para estimar cantidad. Default: 0 (no muestra tamaño calculado).
-- POLL_SECONDS: intervalo de revisión en segundos. Default: 300.
-- LOG_LEVEL: nivel de logs. Default: INFO.
+Activos: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT. TF: 5m, 15m, 1h, 4h. Entrada: `breakout`, `ema_cross`, `liquidity_sweep`, `bos`. Tendencia: `none`, `ema200`, `ema_alignment`. Confirmación: `none`, `volume`, `atr`. Stop: `atr`, `swing`, `fixed_pct`. Objetivo: 1.5R, 2R o 3R. Riesgo nominal: 0.25%, 0.5%, 1% o 2%.
 
-## Ejecución
-Instala dependencias con: pip install -r requirements.txt
-Inicia con: python worker.py
+## Render
+Variables necesarias: `BOT_TOKEN` y `DATABASE_URL` (PostgreSQL persistente de Render). Opcionales: `POLL_SECONDS` (mínimo 60; default 300) y `LOG_LEVEL`. Ejecuta `python web_worker.py`. Crea PostgreSQL persistente y añade su URL interna como `DATABASE_URL` al servicio en la misma región. El esquema se crea automáticamente al iniciar el worker. Si `DATABASE_URL` no está disponible, el bot permite pruebas en memoria, pero las configuraciones se pierden al reiniciar; esa modalidad no es adecuada para uso estable.
 
-Configura las variables de entorno en el servicio de despliegue. Nunca guardes el token de Telegram en el repositorio.
-
-## Importante
-Es una primera versión de reglas, no una estrategia validada ni una garantía de rentabilidad. Probar en paper trading y hacer backtesting antes de usar capital real. El límite diario de pérdida no puede controlarse con fiabilidad hasta que el sistema registre y liquide los resultados de cada señal.
+## Límites
+La configuración funciona en chats privados. Cada usuario solo puede cambiar sus propias estrategias; las alertas se deduplican por estrategia y vela cerrada. Usa datos públicos spot de Binance.US; la disponibilidad regional puede variar. El riesgo es nominal, no una pérdida máxima garantizada. El bot no ejecuta órdenes ni garantiza rentabilidad. Prueba en simulación antes de arriesgar capital.
