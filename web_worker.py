@@ -9,7 +9,7 @@ log=logging.getLogger("BGM")
 TOKEN=os.getenv("BOT_TOKEN","").strip()
 POLL_SECONDS=max(60,int(os.getenv("POLL_SECONDS","300")))
 bot=telebot.TeleBot(TOKEN) if TOKEN else None
-ready={"telegram_configured":bool(TOKEN),"database_configured":bool(os.getenv("DATABASE_URL")),"scanner_started":False,"users_seen":0}
+ready={"telegram_configured":bool(TOKEN),"database_configured":bool(os.getenv("DATABASE_URL")),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL") else "memory_volatile","scanner_started":False,"users_seen":0}
 db_ready=False
 HELP="""🤖 BGM MULTIUSUARIO
 /start — registrar tu chat privado
@@ -125,6 +125,7 @@ def listener():
         try: bot.infinity_polling(timeout=20,long_polling_timeout=15,skip_pending=True)
         except Exception: log.exception("Telegram polling failed"); time.sleep(5)
 if __name__=="__main__":
+    log.info("Starting BGM multi-user bot; persistence_mode=%s; telegram_configured=%s",ready["persistence_mode"],ready["telegram_configured"])
     if bot: threading.Thread(target=listener,daemon=True).start()
     ready["scanner_started"]=True
     threading.Thread(target=scanner,daemon=True).start()
