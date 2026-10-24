@@ -33,8 +33,35 @@ def register_chat(message):
     except Exception:
         log.exception("Could not confirm Telegram destination.")
 
+def test_alert(message):
+    if not message.from_user or message.from_user.is_bot:
+        return
+    chat_id = message.chat.id
+    with destination_lock:
+        destination["chat_id"] = chat_id
+        ready["destination_configured"] = True
+    sample = (
+        "🧪 BGM TRADING SIGNALS — ALERTA DE PRUEBA\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "Activo: BTCUSDT\n"
+        "Dirección: LONG (SIMULADA)\n"
+        "Entrada: 67,000.00 (FICTICIA)\n"
+        "Stop Loss: 66,700.00 (FICTICIO)\n"
+        "Take Profit: 67,600.00 (FICTICIO)\n"
+        "Riesgo nominal: 1%\n"
+        "Estado: DEMOSTRACIÓN — NO OPERAR\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "Esta alerta comprueba el envío por Telegram. No es una señal de mercado ni usa precios actuales."
+    )
+    try:
+        bot.send_message(chat_id, sample, disable_web_page_preview=True)
+        log.info("Telegram test alert sent successfully.")
+    except Exception:
+        log.exception("Could not send Telegram test alert.")
+
 if bot:
     bot.message_handler(commands=["start", "id"])(register_chat)
+    bot.message_handler(commands=["test"])(test_alert)
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
