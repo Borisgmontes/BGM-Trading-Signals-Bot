@@ -153,7 +153,12 @@ if bot:
                 w=WIZARDS.get(uid)
                 if not w or w["step"]<len(STEPS): bot.send_message(chat_id,"Completa la configuración desde Crear estrategia."); return
                 cfg=dict(w["config"])
-                cfg["name"]=f"{cfg['symbol']}_{cfg['timeframe']}_{cfg['entry']}"
+                base_name=f"{cfg['symbol']}_{cfg['timeframe']}_{cfg['entry']}"
+                existing={x["name"] for x in user_store.list_strategies(uid)}
+                cfg["name"]=base_name
+                suffix=2
+                while cfg["name"] in existing:
+                    cfg["name"]=f"{base_name}_{suffix}"; suffix+=1
                 validate_config(cfg)
                 sid=user_store.create_strategy(uid,cfg["name"],cfg)
                 WIZARDS.pop(uid,None)
