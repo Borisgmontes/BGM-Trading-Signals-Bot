@@ -1,0 +1,27 @@
+name: Keep BGM Render awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bgm-render-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check BGM service health
+        env:
+          TARGET_URL: https://bgm-trading-signals.onrender.com/health
+        run: |
+          set -eu
+          code="$(curl --silent --show-error --location --max-time 70 --output response.json --write-out '%{http_code}' "$TARGET_URL")"
+          cat response.json
+          test "$code" = "200"
