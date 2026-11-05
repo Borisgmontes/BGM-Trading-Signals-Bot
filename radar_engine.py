@@ -24,7 +24,7 @@ def validate_radar_config(config):
     return config
 
 
-def fetch_radar_candles(symbol, timeframe, limit=260):
+def fetch_radar_candles(symbol, timeframe, limit=1000):
     response = requests.get(BASE_URL, params={"symbol": symbol, "interval": timeframe, "limit": limit},
                             headers={"User-Agent": "BGM-BTC-Radar/1.0"}, timeout=15)
     response.raise_for_status()
