@@ -4,6 +4,7 @@ import telebot
 from telebot import types
 import user_store
 from strategy_engine import validate_config, fetch_candles, evaluate, format_alert
+from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO"))
 log=logging.getLogger("BGM")
@@ -22,6 +23,8 @@ STOPS=[("ATR (dinámico)","atr"),("Último swing","swing"),("Porcentaje fijo 0,5
 TARGETS=[("1,5R","1.5"),("2R","2.0"),("3R","3.0")]
 RISKS=[("0,25%","0.25"),("0,5%","0.5"),("1%","1.0"),("2%","2.0")]
 STEPS=[("symbol","Elige el activo",ASSETS),("timeframe","Elige la temporalidad",TFS),("entry","Elige el tipo de entrada",ENTRIES),("trend","Filtro de tendencia",TRENDS),("confirmation","Confirmación adicional",CONFIRMS),("stop","Cómo calcular el Stop Loss",STOPS),("target_r","Objetivo de beneficio",TARGETS),("risk_pct","Riesgo nominal por operación",RISKS)]
+RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen","volume"),("ATR","atr"),("Bandas Bollinger","bollinger"),("Barrido de liquidez","liquidity"),("BOS","bos")]
+RADAR_TFS=[("5 minutos","5m"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
 
 HELP="""🤖 BGM TRADING SIGNALS
 Usa los botones para configurar una estrategia sin escribir parámetros.
@@ -39,6 +42,7 @@ def main_keyboard():
     k=types.InlineKeyboardMarkup(row_width=2)
     k.add(types.InlineKeyboardButton("➕ Crear estrategia",callback_data="wizard:start"),
           types.InlineKeyboardButton("📋 Mis estrategias",callback_data="strategies:list"))
+    k.add(types.InlineKeyboardButton("📡 Configurar BTC RADAR",callback_data="radar:start"))
     k.add(types.InlineKeyboardButton("🧪 Probar formato",callback_data="test:sim"))
     k.add(types.InlineKeyboardButton("❔ Ayuda",callback_data="help:show"))
     return k
@@ -81,6 +85,42 @@ def show_step(chat_id,uid,edit_message_id=None):
         except Exception: bot.send_message(chat_id,text,reply_markup=kb)
     else: bot.send_message(chat_id,text,reply_markup=kb)
 
+def show_radar_step(chat_id,uid,edit_message_id=None):
+    w=WIZARDS.get(uid)
+    if not w or not w.get("radar"): return
+    cfg=w["config"]; step=w["step"]
+    kb=types.InlineKeyboardMarkup(row_width=2)
+    if step==0:
+        text="📡 BTC RADAR (1/4)\n\nSelecciona temporalidad:"
+        for label,value in RADAR_TFS:
+            kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:timeframe:{value}"))
+    elif step==1:
+        text="📡 BTC RADAR (2/4)\n\nActiva o desactiva indicadores. Seleccionados: "+str(len(cfg["modules"]))
+        for label,value in RADAR_MODULES:
+            mark="☑️" if value in cfg["modules"] else "⬜"
+            kb.add(types.InlineKeyboardButton(mark+" "+label,callback_data=f"radar:toggle:{value}"))
+        kb.add(types.InlineKeyboardButton("Continuar ➡️",callback_data="radar:continue"))
+    elif step==2:
+        text="📡 BTC RADAR (3/4)\n\n¿Cuántas confirmaciones mínimas deben coincidir?"
+        for n in range(1,len(cfg["modules"])+1):
+            kb.add(types.InlineKeyboardButton(str(n)+" confirmaciones",callback_data=f"radar:set:min_score:{n}"))
+    elif step==3:
+        text="📡 BTC RADAR (4/4)\n\nSelecciona objetivo teórico:"
+        for label,value in TARGETS:
+            kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:target_r:{value}"))
+    else:
+        names=dict(RADAR_MODULES)
+        chosen=", ".join(names[x] for x in cfg["modules"])
+        text=("🧾 RESUMEN BTC RADAR\n\nActivo: BTCUSDT\nTemporalidad: "+cfg["timeframe"]+
+              "\nIndicadores: "+chosen+"\nConfirmaciones mínimas: "+str(cfg["min_score"])+
+              "\nObjetivo teórico: "+str(cfg["target_r"])+"R\n\nGuardar y activar el radar?")
+        kb.add(types.InlineKeyboardButton("💾 Guardar y activar",callback_data="radar:save"))
+    kb.add(types.InlineKeyboardButton("✖️ Cancelar",callback_data="wizard:cancel"))
+    if edit_message_id:
+        try: bot.edit_message_text(text,chat_id,edit_message_id,reply_markup=kb)
+        except Exception: bot.send_message(chat_id,text,reply_markup=kb)
+    else: bot.send_message(chat_id,text,reply_markup=kb)
+
 def list_for_user(chat_id,uid):
     rows=user_store.list_strategies(uid)
     if not rows: return bot.send_message(chat_id,"Todavía no tienes estrategias guardadas.",reply_markup=main_keyboard())
@@ -88,7 +128,11 @@ def list_for_user(chat_id,uid):
     lines=["📋 TUS ESTRATEGIAS"]
     for x in rows:
         cfg=x["config"]; cfg=json.loads(cfg) if isinstance(cfg,str) else cfg
-        lines.append(f"\nID {x['id']} · {x['name']} · {'🟢 ACTIVA' if x['enabled'] else '⏸ PAUSADA'}\n{cfg['symbol']} {cfg['timeframe']} · {cfg['entry']} · TP {cfg['target_r']}R · riesgo {cfg['risk_pct']}%")
+        if cfg.get("mode")=="radar":
+            details=f"BTCUSDT {cfg['timeframe']} · BTC RADAR · {len(cfg['modules'])} indicadores · {cfg['min_score']} confirmaciones · TP {cfg['target_r']}R"
+        else:
+            details=f"{cfg['symbol']} {cfg['timeframe']} · {cfg['entry']} · TP {cfg['target_r']}R · riesgo {cfg['risk_pct']}%"
+        lines.append(f"\nID {x['id']} · {x['name']} · {'🟢 ACTIVA' if x['enabled'] else '⏸ PAUSADA'}\n{details}")
         if x["enabled"]:
             kb.add(types.InlineKeyboardButton(f"⏸ Pausar {x['id']}",callback_data=f"strategy:off:{x['id']}"))
         else:
@@ -127,6 +171,38 @@ if bot:
                 bot.send_message(chat_id,HELP if data=="help:show" else "¿Qué quieres hacer?",reply_markup=main_keyboard()); return
             if data=="test:sim":
                 bot.send_message(chat_id,"🧪 ALERTA DE PRUEBA — SIMULADA\nBTCUSDT LONG\nEntrada, SL y TP ficticios. No es señal real de mercado.",reply_markup=main_keyboard()); return
+            if data=="radar:start":
+                WIZARDS[uid]={"radar":True,"step":0,"config":{"symbol":"BTCUSDT","modules":[x[1] for x in RADAR_MODULES],"target_r":2.0}}
+                show_radar_step(chat_id,uid,c.message.message_id); return
+            if data.startswith("radar:"):
+                w=WIZARDS.get(uid)
+                if not w or not w.get("radar"):
+                    bot.send_message(chat_id,"Inicia BTC RADAR desde el menú."); return
+                if data.startswith("radar:toggle:"):
+                    module=data.split(":")[-1]
+                    if module in w["config"]["modules"]: w["config"]["modules"].remove(module)
+                    else: w["config"]["modules"].append(module)
+                    show_radar_step(chat_id,uid,c.message.message_id); return
+                if data=="radar:continue":
+                    if not w["config"]["modules"]:
+                        bot.send_message(chat_id,"Activa al menos un indicador."); return
+                    w["step"]=2; show_radar_step(chat_id,uid,c.message.message_id); return
+                if data.startswith("radar:set:"):
+                    _,_,key,value=data.split(":",3)
+                    if key=="timeframe": w["config"][key]=value; w["step"]=1
+                    elif key=="min_score": w["config"][key]=int(value); w["step"]=3
+                    elif key=="target_r": w["config"][key]=float(value); w["step"]=4
+                    show_radar_step(chat_id,uid,c.message.message_id); return
+                if data=="radar:save":
+                    cfg=dict(w["config"]); cfg["mode"]="radar"; cfg["name"]="BTC_RADAR_"+cfg["timeframe"]
+                    validate_radar_config(cfg)
+                    existing={x["name"] for x in user_store.list_strategies(uid)}
+                    base=cfg["name"]; suffix=2
+                    while cfg["name"] in existing:
+                        cfg["name"]=base+"_"+str(suffix); suffix+=1
+                    sid=user_store.create_strategy(uid,cfg["name"],cfg)
+                    WIZARDS.pop(uid,None)
+                    bot.send_message(chat_id,f"✅ BTC RADAR guardado y activado (ID {sid}).\nAnalizará velas cerradas y enviará alertas cuando se alcance el mínimo de confluencias.",reply_markup=main_keyboard()); return
             if data=="wizard:start" or data=="wizard:restart":
                 WIZARDS[uid]={"step":0,"config":{}}
                 show_step(chat_id,uid,c.message.message_id); return
@@ -196,16 +272,23 @@ def scanner():
             grouped={}
             for row in strategies:
                 cfg=row["config"]; cfg=json.loads(cfg) if isinstance(cfg,str) else cfg
-                cfg["name"]=row["name"]; grouped.setdefault((cfg["symbol"],cfg["timeframe"]),[]).append((row,cfg))
-            for key,items in grouped.items():
-                try: df=fetch_candles(*key)
-                except Exception: log.exception("Market data failed %s %s",*key); continue
+                cfg["name"]=row["name"]; mode=cfg.get("mode","strategy")
+                grouped.setdefault((cfg.get("symbol","BTCUSDT"),cfg["timeframe"],mode),[]).append((row,cfg))
+            for (symbol,timeframe,mode),items in grouped.items():
+                try:
+                    df=fetch_radar_candles(symbol,timeframe) if mode=="radar" else fetch_candles(symbol,timeframe)
+                except Exception: log.exception("Market data failed %s %s",symbol,timeframe); continue
                 for row,cfg in items:
                     try:
-                        cid,sig=evaluate(df,cfg)
+                        if mode=="radar":
+                            cid,sig=evaluate_radar(df,cfg)
+                            formatter=format_radar_alert
+                        else:
+                            cid,sig=evaluate(df,cfg)
+                            formatter=format_alert
                         if cid is None or sig is None or not user_store.claim_signal(row["id"],cid): continue
                         sig["strategy_name"]=row["name"]
-                        bot.send_message(row["chat_id"],format_alert(sig),disable_web_page_preview=True)
+                        bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
                     except Exception: log.exception("Strategy failed id=%s",row["id"])
         except Exception: log.exception("Scanner cycle failed")
         time.sleep(POLL_SECONDS)
