@@ -27,3 +27,9 @@ La configuración funciona en chats privados. Cada usuario solo puede cambiar su
 En Telegram, pulsa **📡 Configurar BTC RADAR** desde `/start`. El asistente permite seleccionar temporalidad (5m/15m/1h/4h), activar módulos EMA/tendencia, RSI, MACD, volumen, ATR, Bollinger, barrido de liquidez y BOS, fijar el mínimo de confirmaciones y elegir objetivo teórico de 1.5R/2R/3R.
 
 El radar utiliza velas cerradas de BTCUSDT desde el endpoint público spot de Binance.US. Cada configuración se guarda como estrategia individual en la tabla existente y se deduplica por estrategia y vela. Alertas informativas LONG/SHORT; no ejecuta órdenes. Los indicadores son reglas transparentes iniciales, no probabilidades ni señales con rentabilidad demostrada. Validar mediante backtest y paper trading antes de utilizarlas en real.
+
+## Dashboard móvil privado (en pruebas)
+
+La rama `feature/btc-radar` incluye una PWA para Android servida desde la raíz del servicio `web_worker.py`. El acceso está protegido por `DASHBOARD_PIN`. Para almacenamiento persistente se requiere `DATABASE_URL`. Para notificaciones Push se requieren `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y opcionalmente `VAPID_CLAIMS_EMAIL`. Instala la PWA desde Chrome y concede permiso de notificaciones. El botón de compartir abre el menú nativo de Android; el usuario elige WhatsApp y el grupo.
+
+**Probabilidad:** el campo permanece sin porcentaje (en calibración) hasta ejecutar un backtest reproducible con suficientes señales históricas. No se debe convertir el número de confluencias en una probabilidad ficticia. El dashboard no ejecuta órdenes.
