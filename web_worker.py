@@ -167,6 +167,8 @@ if bot:
             user_store.upsert_user(uid,chat_id,c.from_user.username)
             data=c.data or ""
             bot.answer_callback_query(c.id)
+            if data=="strategies:list":
+                list_for_user(chat_id,uid); return
             if data in ("menu:show","help:show"):
                 bot.send_message(chat_id,HELP if data=="help:show" else "¿Qué quieres hacer?",reply_markup=main_keyboard()); return
             if data=="test:sim":
@@ -288,7 +290,11 @@ def scanner():
                             formatter=format_alert
                         if cid is None or sig is None or not user_store.claim_signal(row["id"],cid): continue
                         sig["strategy_name"]=row["name"]
-                        bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
+                        try:
+                            bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
+                        except Exception:
+                            user_store.release_signal(row["id"],cid)
+                            raise
                     except Exception: log.exception("Strategy failed id=%s",row["id"])
         except Exception: log.exception("Scanner cycle failed")
         time.sleep(POLL_SECONDS)
