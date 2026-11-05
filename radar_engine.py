@@ -44,8 +44,10 @@ def fetch_radar_candles(symbol, timeframe, limit=260):
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
     rs = gain / loss.replace(0, float("nan"))
-    df["rsi"] = 100 - (100 / (1 + rs))
-    df["rsi"] = df["rsi"].fillna(50)
+    rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.mask((loss == 0) & (gain > 0), 100)
+    rsi = rsi.mask((gain == 0) & (loss > 0), 0)
+    df["rsi"] = rsi.fillna(50)
     fast = df["close"].ewm(span=12, adjust=False).mean()
     slow = df["close"].ewm(span=26, adjust=False).mean()
     df["macd"] = fast - slow
