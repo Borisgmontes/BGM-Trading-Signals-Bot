@@ -84,7 +84,8 @@ def _push(signal):
         log.error("pywebpush dependency missing"); return
     with _db() as conn:
         rows=conn.execute("SELECT endpoint,subscription FROM bgm_dashboard_push").fetchall()
-    payload=json.dumps({"title":"BGM · Nueva señal candidata","body":f"{signal['direction']} BTCUSDT {signal['timeframe']} · Entrada {signal['entry']:.2f} · Abre para revisar","url":"/","tag":f"bgm-{signal['id']}"})
+    probability = (" · Probabilidad " + str(signal["probability"]) + "%") if signal.get("probability") is not None else " · Probabilidad en calibración"
+    payload=json.dumps({"title":"BGM · " + signal["direction"] + " BTCUSDT","body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
     for row in rows:
         try:
             webpush(subscription_info=dict(row["subscription"]),data=payload,vapid_private_key=VAPID_PRIVATE,
@@ -160,5 +161,5 @@ def handle(handler):
                 _json(handler,200,{"ok":update_signal(bits[3],status)})
         else: _json(handler,404,{"error":"Ruta no encontrada."})
     except (ValueError,json.JSONDecodeError) as exc: _json(handler,400,{"error":str(exc)})
-    except Exception as exc: log.exception("Dashboard API error"); _json(handler,503,{"error":str(exc)})
+    except Exception as exc: log.exception("Dashboard API error"); _json(handler,503,{"error":"Servicio no configurado o almacenamiento no disponible."})
     return True
