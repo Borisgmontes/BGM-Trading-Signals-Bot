@@ -51,7 +51,18 @@
       </section>
       <section class="section-head signal-heading"><div><p class="eyebrow">DETECCIONES</p><h2>Señales candidatas</h2></div><button id="refresh" class="icon-button" aria-label="Actualizar">↻</button></section>
       <div id="signals" class="signals"><div class="empty">Esperando la primera señal candidata…</div></div>
-      <p class="disclaimer">La probabilidad mostrada deberá estar calibrada con backtesting; no es una garantía de resultado. El radar no ejecuta operaciones.</p>
+      <section class="section-head signal-heading"><div><p class="eyebrow">SEGUIMIENTO</p><h2>Operaciones confirmadas</h2></div><button id="refresh-trades" class="icon-button" aria-label="Actualizar operaciones">↻</button></section>
+      <section class="panel trades-panel">
+        <div class="trade-stats">
+          <div><small>OPERACIONES</small><strong id="trade-total">0</strong></div>
+          <div><small>GANADAS</small><strong id="trade-wins" class="long">0</strong></div>
+          <div><small>PERDIDAS</small><strong id="trade-losses" class="short">0</strong></div>
+          <div><small>EFECTIVIDAD</small><strong id="trade-rate">—</strong></div>
+        </div>
+        <div id="trades" class="trades"><div class="empty">Las señales que confirmes aparecerán aquí para registrar su resultado.</div></div>
+      </section>
+      <p class="disclaimer">Registra manualmente cada resultado después de cerrar la operación. El radar no ejecuta operaciones ni calcula beneficios monetarios.</p>
+      <p class="disclaimer">La probabilidad mostrada deberá estar calibrada con backtesting; no es una garantía de resultado.</p>
     </section>
   </main>
   <script src="/dashboard.js" defer></script>
