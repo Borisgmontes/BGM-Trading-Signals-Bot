@@ -142,3 +142,41 @@ def format_radar_alert(signal):
         f"Vela cerrada UTC: {signal['candle_id']}\n"
         "Datos spot públicos. Alerta informativa; no ejecuta órdenes ni garantiza resultados."
     )
+
+
+def estimate_probability(df, config, direction, horizon=20, min_samples=30):
+    """Historical TP-before-SL rate for the same radar setup and direction.
+
+    Uses only signals generated from candles before their outcomes. If fewer than
+    min_samples historical examples exist, returns None instead of a fake number.
+    A candle touching TP and SL together is counted as an SL (conservative).
+    """
+    if len(df) < 205 + horizon + min_samples:
+        return None
+    wins = 0
+    samples = 0
+    last_signal_index = len(df) - horizon - 1
+    for i in range(204, last_signal_index + 1):
+        _, historical = evaluate_radar(df.iloc[:i + 1], config)
+        if not historical or historical["direction"] != direction:
+            continue
+        future = df.iloc[i + 1:i + horizon + 1]
+        hit = False
+        won = False
+        for _, candle in future.iterrows():
+            if direction == "LONG":
+                stop_hit = float(candle["low"]) <= historical["stop"]
+                target_hit = float(candle["high"]) >= historical["target"]
+            else:
+                stop_hit = float(candle["high"]) >= historical["stop"]
+                target_hit = float(candle["low"]) <= historical["target"]
+            if stop_hit or target_hit:
+                hit = True
+                won = bool(target_hit and not stop_hit)
+                break
+        samples += 1
+        if hit and won:
+            wins += 1
+    if samples < min_samples:
+        return None
+    return round(100 * wins / samples)
