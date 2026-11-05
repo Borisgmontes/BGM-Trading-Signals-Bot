@@ -102,7 +102,8 @@ def update_signal(signal_id,status):
         return cur.rowcount>0
 
 def _push(signal):
-    if not (VAPID_PUBLIC and VAPID_PRIVATE): return
+    if not (VAPID_PUBLIC and VAPID_PRIVATE): return 0
+    sent = 0
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
@@ -118,6 +119,7 @@ def _push(signal):
         try:
             webpush(subscription_info=dict(row["subscription"]),data=payload,vapid_private_key=VAPID_PRIVATE,
               vapid_claims={"sub":VAPID_EMAIL})
+            sent += 1
         except Exception as exc:
             log.warning("Push failed: %s",exc)
             if getattr(exc,"response",None) is not None and exc.response.status_code==410:
@@ -125,6 +127,15 @@ def _push(signal):
                     _MEM_SUBSCRIPTIONS.pop(row["endpoint"], None)
                 else:
                     with _db() as conn: conn.execute("DELETE FROM bgm_dashboard_push WHERE endpoint=%s",(row["endpoint"],))
+    return sent
+
+def send_test_push():
+    test={"id":"test","direction":"LONG","timeframe":"5m","probability":None,
+          "entry":100000.0,"target":102000.0,"stop":99000.0}
+    sent=_push(test)
+    if not sent:
+        raise RuntimeError("No hay suscripción Push válida o faltan claves VAPID.")
+    return sent
 
 def scan_dashboard():
     """Called by the existing scanner after startup; only closed candles are evaluated."""
@@ -193,6 +204,7 @@ def handle(handler):
             if not VAPID_PUBLIC: raise RuntimeError("Falta configurar VAPID_PUBLIC_KEY.")
             _json(handler,200,{"public_key":VAPID_PUBLIC})
         elif path=="/api/dashboard/push-subscription" and handler.command=="POST": save_subscription(_read(handler)); _json(handler,200,{"ok":True})
+        elif path=="/api/dashboard/push-test" and handler.command=="POST": _json(handler,200,{"sent":send_test_push()})
         elif path.startswith("/api/dashboard/signals/") and handler.command=="POST":
             bits=path.strip("/").split("/")
             if len(bits)!=5 or bits[4] not in ("confirm","discard"): _json(handler,404,{"error":"Ruta no encontrada."})
