@@ -261,7 +261,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if dashboard_api.handle(self): return
         if self.path!="/health": self.send_response(404); self.end_headers(); return
-        body=json.dumps({"service":"BGM Trading Signals","status":"running" if ready["scanner_started"] and db_ready else "configuration_required",**ready,"trading_execution":False}).encode()
+        scan=dashboard_api.scan_status()
+        healthy=bool(scan.get("last_success_at") and not scan.get("last_error"))
+        body=json.dumps({"service":"BGM Trading Signals","status":"scanning" if healthy else ("starting" if ready["scanner_started"] and db_ready else "configuration_required"),"scanner_thread_started":ready["scanner_started"],"database_ready":db_ready,"last_scan_ok":healthy,"last_scan_at":scan.get("last_success_at"),"last_scan_error":scan.get("last_error"),"scan_count":scan.get("scan_count",0),"persistence_mode":ready["persistence_mode"],"telegram_configured":ready["telegram_configured"],"database_configured":ready["database_configured"],"users_seen":ready["users_seen"],"trading_execution":False}).encode()
         self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
         if dashboard_api.handle(self): return
