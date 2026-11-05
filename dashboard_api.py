@@ -121,7 +121,10 @@ def _push(signal):
         except Exception as exc:
             log.warning("Push failed: %s",exc)
             if getattr(exc,"response",None) is not None and exc.response.status_code==410:
-                with _db() as conn: conn.execute("DELETE FROM bgm_dashboard_push WHERE endpoint=%s",(row["endpoint"],))
+                if not os.getenv("DATABASE_URL", "").strip():
+                    _MEM_SUBSCRIPTIONS.pop(row["endpoint"], None)
+                else:
+                    with _db() as conn: conn.execute("DELETE FROM bgm_dashboard_push WHERE endpoint=%s",(row["endpoint"],))
 
 def scan_dashboard():
     """Called by the existing scanner after startup; only closed candles are evaluated."""
