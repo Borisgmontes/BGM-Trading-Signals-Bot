@@ -12,6 +12,12 @@ VAPID_PUBLIC = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 VAPID_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com").strip()
 DEFAULT = {"timeframe":"5m","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
+# Free Render has no persistent disk. This fallback keeps the dashboard usable,
+# but settings/signals/subscriptions reset whenever the instance restarts.
+_MEM_CONFIG = dict(DEFAULT)
+_MEM_SIGNALS = []
+_MEM_SUBSCRIPTIONS = {}
+_MEM_NEXT_ID = 1
 
 def _db():
     url=os.getenv("DATABASE_URL","").strip()
@@ -19,6 +25,9 @@ def _db():
     return psycopg.connect(url,row_factory=dict_row,connect_timeout=10)
 
 def init_dashboard_db():
+    if not os.getenv("DATABASE_URL", "").strip():
+        log.warning("Dashboard running in volatile memory mode; configure DATABASE_URL for persistence.")
+        return
     with _db() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_config (
           id SMALLINT PRIMARY KEY DEFAULT 1 CHECK(id=1), config JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())""")
@@ -33,6 +42,8 @@ def init_dashboard_db():
           created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(candle_id,timeframe))""")
 
 def get_settings():
+    if not os.getenv("DATABASE_URL", "").strip():
+        return dict(_MEM_CONFIG)
     with _db() as conn:
         row=conn.execute("SELECT config FROM bgm_dashboard_config WHERE id=1").fetchone()
         return dict(row["config"]) if row else dict(DEFAULT)
@@ -48,11 +59,16 @@ def set_settings(config):
     rr=float(config.get("target_r",2))
     if rr not in (1.5,2.0,3.0): raise ValueError("TP permitido: 1.5R, 2R o 3R.")
     clean={"timeframe":tf,"modules":modules,"min_score":score,"target_r":rr,"enabled":True}
+    if not os.getenv("DATABASE_URL", "").strip():
+        _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
+        return clean
     with _db() as conn:
         conn.execute("INSERT INTO bgm_dashboard_config(id,config,updated_at) VALUES(1,%s,now()) ON CONFLICT(id) DO UPDATE SET config=EXCLUDED.config,updated_at=now()", (json.dumps(clean),))
     return clean
 
 def list_signals():
+    if not os.getenv("DATABASE_URL", "").strip():
+        return [dict(x) for x in reversed(_MEM_SIGNALS[-30:]) if x["status"] in ("CANDIDATE","CONFIRMED")]
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
           confirmations,status,created_at FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED')
@@ -67,11 +83,20 @@ def list_signals():
 def save_subscription(sub):
     endpoint=sub.get("endpoint")
     if not endpoint or not isinstance(sub.get("keys"),dict): raise ValueError("Suscripción push no válida.")
+    if not os.getenv("DATABASE_URL", "").strip():
+        _MEM_SUBSCRIPTIONS[endpoint] = dict(sub)
+        return
     with _db() as conn:
         conn.execute("INSERT INTO bgm_dashboard_push(endpoint,subscription) VALUES(%s,%s) ON CONFLICT(endpoint) DO UPDATE SET subscription=EXCLUDED.subscription",(endpoint,json.dumps(sub)))
 
 def update_signal(signal_id,status):
     if status not in ("CONFIRMED","DISCARDED"): raise ValueError("Estado no válido.")
+    if not os.getenv("DATABASE_URL", "").strip():
+        for item in _MEM_SIGNALS:
+            if str(item["id"]) == str(signal_id) and item["status"] == "CANDIDATE":
+                item["status"] = status
+                return True
+        return False
     with _db() as conn:
         cur=conn.execute("UPDATE bgm_dashboard_signals SET status=%s WHERE id=%s AND status='CANDIDATE'",(status,int(signal_id)))
         return cur.rowcount>0
@@ -82,8 +107,11 @@ def _push(signal):
         from pywebpush import webpush, WebPushException
     except ImportError:
         log.error("pywebpush dependency missing"); return
-    with _db() as conn:
-        rows=conn.execute("SELECT endpoint,subscription FROM bgm_dashboard_push").fetchall()
+    if not os.getenv("DATABASE_URL", "").strip():
+        rows=[{"endpoint":k,"subscription":v} for k,v in _MEM_SUBSCRIPTIONS.items()]
+    else:
+        with _db() as conn:
+            rows=conn.execute("SELECT endpoint,subscription FROM bgm_dashboard_push").fetchall()
     probability = (" · Probabilidad " + str(signal["probability"]) + "%") if signal.get("probability") is not None else " · Probabilidad en calibración"
     payload=json.dumps({"title":"BGM · " + signal["direction"] + " BTCUSDT","body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
     for row in rows:
@@ -104,6 +132,15 @@ def scan_dashboard():
         candle_id,signal=evaluate_radar(df,cfg)
         if not signal: return
         probability=estimate_probability(df,cfg,signal["direction"])
+        signal["probability"] = probability
+        if not os.getenv("DATABASE_URL", "").strip():
+            global _MEM_NEXT_ID
+            if any(x["candle_id"] == candle_id and x["timeframe"] == cfg["timeframe"] for x in _MEM_SIGNALS): return
+            signal_row=dict(signal,id=str(_MEM_NEXT_ID),status="CANDIDATE",created_at=None)
+            _MEM_NEXT_ID += 1
+            _MEM_SIGNALS.append(signal_row)
+            _push(signal_row)
+            return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
               probability,confirmations) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
