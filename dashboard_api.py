@@ -114,7 +114,10 @@ def _push(signal):
         with _db() as conn:
             rows=conn.execute("SELECT endpoint,subscription FROM bgm_dashboard_push").fetchall()
     probability = (" · Probabilidad " + str(signal["probability"]) + "%") if signal.get("probability") is not None else " · Probabilidad en calibración"
-    payload=json.dumps({"title":"BGM · " + signal["direction"] + " BTCUSDT","body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
+    if signal.get("test"):
+        payload=json.dumps({"title":"BGM · Prueba de notificación","body":"Las notificaciones emergentes están funcionando en este Android.","url":"/","tag":"bgm-push-test"})
+    else:
+        payload=json.dumps({"title":"BGM · " + signal["direction"] + " BTCUSDT","body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
     for row in rows:
         try:
             webpush(subscription_info=dict(row["subscription"]),data=payload,vapid_private_key=VAPID_PRIVATE,
@@ -131,7 +134,7 @@ def _push(signal):
 
 def send_test_push():
     test={"id":"test","direction":"LONG","timeframe":"5m","probability":None,
-          "entry":100000.0,"target":102000.0,"stop":99000.0}
+          "entry":100000.0,"target":102000.0,"stop":99000.0,"test":True}
     sent=_push(test)
     if not sent:
         raise RuntimeError("No hay suscripción Push válida o faltan claves VAPID.")
