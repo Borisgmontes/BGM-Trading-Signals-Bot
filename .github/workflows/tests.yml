@@ -13,4 +13,4 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest
       - run: pytest -q
-      - run: python -m py_compile web_worker.py user_store.py strategy_engine.py
+      - run: python -m py_compile web_worker.py user_store.py strategy_engine.py radar_engine.py
