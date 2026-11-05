@@ -20,3 +20,10 @@ Variables necesarias: `BOT_TOKEN` y `DATABASE_URL` (PostgreSQL persistente de Re
 
 ## Límites
 La configuración funciona en chats privados. Cada usuario solo puede cambiar sus propias estrategias; las alertas se deduplican por estrategia y vela cerrada. Usa datos públicos spot de Binance.US; la disponibilidad regional puede variar. El riesgo es nominal, no una pérdida máxima garantizada. El bot no ejecuta órdenes ni garantiza rentabilidad. Prueba en simulación antes de arriesgar capital.
+
+
+## BTC RADAR (nuevo módulo en rama feature/btc-radar)
+
+En Telegram, pulsa **📡 Configurar BTC RADAR** desde `/start`. El asistente permite seleccionar temporalidad (5m/15m/1h/4h), activar módulos EMA/tendencia, RSI, MACD, volumen, ATR, Bollinger, barrido de liquidez y BOS, fijar el mínimo de confirmaciones y elegir objetivo teórico de 1.5R/2R/3R.
+
+El radar utiliza velas cerradas de BTCUSDT desde el endpoint público spot de Binance.US. Cada configuración se guarda como estrategia individual en la tabla existente y se deduplica por estrategia y vela. Alertas informativas LONG/SHORT; no ejecuta órdenes. Los indicadores son reglas transparentes iniciales, no probabilidades ni señales con rentabilidad demostrada. Validar mediante backtest y paper trading antes de utilizarlas en real.
