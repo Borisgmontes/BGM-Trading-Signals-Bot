@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import telebot
 from telebot import types
 import user_store
+import dashboard_api
 from strategy_engine import validate_config, fetch_candles, evaluate, format_alert
 from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert
 
@@ -258,18 +259,27 @@ if bot:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/","/health"): self.send_response(404); self.end_headers(); return
+        if dashboard_api.handle(self): return
+        if self.path!="/health": self.send_response(404); self.end_headers(); return
         body=json.dumps({"service":"BGM Trading Signals","status":"running" if ready["scanner_started"] and db_ready else "configuration_required",**ready,"trading_execution":False}).encode()
         self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_POST(self):
+        if dashboard_api.handle(self): return
+        self.send_response(404); self.end_headers()
     def log_message(self,*args): pass
 
 def scanner():
     global db_ready
-    if not bot: log.error("BOT_TOKEN missing"); return
+    if not bot: log.warning("BOT_TOKEN missing; dashboard-only mode")
     while True:
         try:
-            if not db_ready: user_store.init_db(); db_ready=True; log.info("Storage schema ready; mode=%s",ready["persistence_mode"])
-            strategies=user_store.get_active_strategies()
+            if not db_ready:
+                user_store.init_db()
+                dashboard_api.init_dashboard_db()
+                db_ready=True
+                log.info("Storage schema ready; mode=%s",ready["persistence_mode"])
+            dashboard_api.scan_dashboard()
+            strategies=user_store.get_active_strategies() if bot else []
             ready["users_seen"]=len({x["telegram_user_id"] for x in strategies})
             grouped={}
             for row in strategies:
@@ -291,7 +301,7 @@ def scanner():
                         if cid is None or sig is None or not user_store.claim_signal(row["id"],cid): continue
                         sig["strategy_name"]=row["name"]
                         try:
-                            bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
+                            if bot: bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
                         except Exception:
                             user_store.release_signal(row["id"],cid)
                             raise
