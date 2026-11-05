@@ -51,8 +51,10 @@ def init_dashboard_db():
           id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, timeframe TEXT NOT NULL, direction TEXT NOT NULL,
           entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
           score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION,
-          confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE',
+          confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(candle_id,timeframe))""")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result TEXT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
@@ -92,6 +94,39 @@ def list_signals():
         d["created_at"]=d["created_at"].isoformat() if d["created_at"] else None
         out.append(d)
     return out
+
+def list_trades():
+    if not os.getenv("DATABASE_URL", "").strip():
+        rows=[dict(x) for x in _MEM_SIGNALS if x.get("status")=="CONFIRMED"]
+        for x in rows:
+            x.setdefault("result",None); x.setdefault("closed_at",None)
+    else:
+        with _db() as conn:
+            rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+              confirmations,status,result,created_at,closed_at FROM bgm_dashboard_signals
+              WHERE status='CONFIRMED' ORDER BY id DESC LIMIT 100""").fetchall()
+        rows=[dict(r) for r in rows]
+        for x in rows:
+            x["id"]=str(x["id"]); x["confirmations"]=list(x["confirmations"] or [])
+            x["created_at"]=x["created_at"].isoformat() if x["created_at"] else None
+            x["closed_at"]=x["closed_at"].isoformat() if x["closed_at"] else None
+    wins=sum(1 for x in rows if x.get("result")=="WIN")
+    losses=sum(1 for x in rows if x.get("result")=="LOSS")
+    closed=wins+losses
+    return {"trades":rows,"stats":{"total":len(rows),"wins":wins,"losses":losses,
+            "win_rate":round(100*wins/closed,1) if closed else None}}
+
+def update_trade_result(signal_id,result):
+    if result not in ("WIN","LOSS","BE"): raise ValueError("Resultado no válido.")
+    if not os.getenv("DATABASE_URL", "").strip():
+        for item in _MEM_SIGNALS:
+            if str(item["id"])==str(signal_id) and item.get("status")=="CONFIRMED":
+                item["result"]=result; item["closed_at"]=_utc_now(); return True
+        return False
+    with _db() as conn:
+        cur=conn.execute("""UPDATE bgm_dashboard_signals SET result=%s,closed_at=now()
+          WHERE id=%s AND status='CONFIRMED'""",(result,int(signal_id)))
+        return cur.rowcount>0
 
 def save_subscription(sub):
     endpoint=sub.get("endpoint")
@@ -255,6 +290,7 @@ def handle(handler):
         if path=="/api/dashboard/settings" and handler.command=="GET": _json(handler,200,get_settings())
         elif path=="/api/dashboard/settings" and handler.command=="POST": _json(handler,200,set_settings(_read(handler)))
         elif path=="/api/dashboard/signals" and handler.command=="GET": _json(handler,200,{"signals":list_signals()})
+        elif path=="/api/dashboard/trades" and handler.command=="GET": _json(handler,200,list_trades())
         elif path=="/api/dashboard/status" and handler.command=="GET":
             _json(handler,200,{"scan":scan_status(),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL","").strip() else "memory_volatile"})
         elif path=="/api/dashboard/push-key" and handler.command=="GET":
@@ -262,6 +298,10 @@ def handle(handler):
             _json(handler,200,{"public_key":VAPID_PUBLIC})
         elif path=="/api/dashboard/push-subscription" and handler.command=="POST": save_subscription(_read(handler)); _json(handler,200,{"ok":True})
         elif path=="/api/dashboard/push-test" and handler.command=="POST": _json(handler,200,{"sent":send_test_push()})
+        elif path.startswith("/api/dashboard/trades/") and handler.command=="POST":
+            bits=path.strip("/").split("/")
+            if len(bits)!=5 or bits[4]!="result": _json(handler,404,{"error":"Ruta no encontrada."})
+            else: _json(handler,200,{"ok":update_trade_result(bits[3],_read(handler).get("result"))})
         elif path.startswith("/api/dashboard/signals/") and handler.command=="POST":
             bits=path.strip("/").split("/")
             if len(bits)!=5 or bits[4] not in ("confirm","discard"): _json(handler,404,{"error":"Ruta no encontrada."})
