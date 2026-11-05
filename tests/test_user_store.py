@@ -18,3 +18,11 @@ def test_user_strategies_are_isolated_and_deduplicated(monkeypatch):
     assert user_store.claim_signal(alice_id, "candle-1") is True
     assert user_store.claim_signal(alice_id, "candle-1") is False
     assert user_store.claim_signal(bob_id, "candle-1") is True
+
+
+def test_failed_delivery_can_release_claim_for_retry(monkeypatch):
+    monkeypatch.setattr(user_store, "DATABASE_URL", "")
+    monkeypatch.setattr(user_store, "_MEM_SENT", set())
+    assert user_store.claim_signal(77, "candle-2") is True
+    user_store.release_signal(77, "candle-2")
+    assert user_store.claim_signal(77, "candle-2") is True
