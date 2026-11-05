@@ -153,7 +153,7 @@ def handle(handler):
         elif path=="/api/dashboard/push-subscription" and handler.command=="POST": save_subscription(_read(handler)); _json(handler,200,{"ok":True})
         elif path.startswith("/api/dashboard/signals/") and handler.command=="POST":
             bits=path.strip("/").split("/")
-            if len(bits)!=6 or bits[4] not in ("confirm","discard"): _json(handler,404,{"error":"Ruta no encontrada."})
+            if len(bits)!=5 or bits[4] not in ("confirm","discard"): _json(handler,404,{"error":"Ruta no encontrada."})
             else:
                 status="CONFIRMED" if bits[4]=="confirm" else "DISCARDED"
                 _json(handler,200,{"ok":update_signal(bits[3],status)})
