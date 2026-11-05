@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#090d18">
+  <meta name="description" content="Panel privado de alertas BGM Trading Signals">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/dashboard.css">
+  <title>BGM Trading Signals</title>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">BGM</span><div><strong>TRADING SIGNALS</strong><small>BTC RADAR · PANEL PRIVADO</small></div></div>
+      <span id="connection" class="status">Conectando…</span>
+    </header>
+    <section id="login" class="panel login-panel">
+      <p class="eyebrow">ACCESO PRIVADO</p><h1>Tu radar, bajo control.</h1>
+      <p class="muted">Introduce el PIN privado configurado para el dashboard.</p>
+      <form id="login-form"><label for="pin">PIN de acceso</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required><button class="primary">Entrar</button></form>
+      <p id="login-error" class="error" aria-live="polite"></p>
+    </section>
+    <section id="dashboard" hidden>
+      <section class="hero">
+        <div><p class="eyebrow">RADAR EN VIVO</p><h1>BTCUSDT</h1><p class="muted">Señales candidatas en velas cerradas</p></div>
+        <div class="price-block"><small>ÚLTIMO ESTADO</small><strong id="radar-state">—</strong></div>
+      </section>
+      <section class="panel settings">
+        <div class="section-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Mis alertas</h2></div><button id="save-settings" class="secondary">Guardar</button></div>
+        <div class="fields">
+          <label>Temporalidad<select id="timeframe"><option value="5m">5 minutos</option><option value="15m">15 minutos</option><option value="1h">1 hora</option><option value="4h">4 horas</option></select></label>
+          <label>Confirmaciones mínimas<select id="min-score"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+          <label>Objetivo TP<select id="target-r"><option value="1.5">1,5 R</option><option value="2" selected>2 R</option><option value="3">3 R</option></select></label>
+        </div>
+        <div class="modules"><span class="field-title">Indicadores del radar</span>
+          <div class="checks">
+            <label><input type="checkbox" value="trend" checked> Tendencia EMA</label>
+            <label><input type="checkbox" value="rsi" checked> RSI</label>
+            <label><input type="checkbox" value="macd" checked> MACD</label>
+            <label><input type="checkbox" value="volume" checked> Volumen</label>
+            <label><input type="checkbox" value="atr" checked> ATR</label>
+            <label><input type="checkbox" value="bollinger" checked> Bollinger</label>
+            <label><input type="checkbox" value="liquidity" checked> Barrido de liquidez</label>
+            <label><input type="checkbox" value="bos" checked> BOS</label>
+          </div>
+        </div>
+        <div class="push-row"><div><strong>Notificaciones emergentes</strong><small id="push-status">Comprueba los permisos de Android</small></div><button id="enable-push" class="secondary">Activar</button></div>
+      </section>
+      <section class="section-head signal-heading"><div><p class="eyebrow">DETECCIONES</p><h2>Señales candidatas</h2></div><button id="refresh" class="icon-button" aria-label="Actualizar">↻</button></section>
+      <div id="signals" class="signals"><div class="empty">Esperando la primera señal candidata…</div></div>
+      <p class="disclaimer">La probabilidad mostrada deberá estar calibrada con backtesting; no es una garantía de resultado. El radar no ejecuta operaciones.</p>
+    </section>
+  </main>
+  <script src="/dashboard.js" defer></script>
+</body>
+</html>
