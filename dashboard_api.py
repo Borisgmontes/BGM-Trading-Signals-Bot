@@ -98,16 +98,17 @@ def scan_dashboard():
     """Called by the existing scanner after startup; only closed candles are evaluated."""
     try:
         cfg=get_settings()
-        from radar_engine import fetch_radar_candles,evaluate_radar
+        from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability
         df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
         candle_id,signal=evaluate_radar(df,cfg)
         if not signal: return
+        probability=estimate_probability(df,cfg,signal["direction"])
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
-              probability,confirmations) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s)
+              probability,confirmations) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
               ON CONFLICT(candle_id,timeframe) DO NOTHING RETURNING id""",
               (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
-               signal["score"],signal["maximum"],json.dumps(signal["confirmations"]))).fetchone()
+               signal["score"],signal["maximum"],probability,json.dumps(signal["confirmations"]))).fetchone()
         if row:
             signal["id"]=str(row["id"]); _push(signal)
     except Exception:
