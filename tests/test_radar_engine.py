@@ -1,6 +1,6 @@
 import pandas as pd
 
-from radar_engine import evaluate_radar, validate_radar_config, format_radar_alert
+from radar_engine import evaluate_radar, validate_radar_config, format_radar_alert, estimate_probability
 
 
 def config(**overrides):
@@ -62,3 +62,7 @@ def test_radar_no_signal_when_trend_is_flat():
     candle_id, signal = evaluate_radar(frame("FLAT"), config())
     assert candle_id == str(219 * 300000)
     assert signal is None
+
+
+def test_probability_is_hidden_when_history_is_insufficient():
+    assert estimate_probability(frame("LONG"), config(), "LONG") is None
