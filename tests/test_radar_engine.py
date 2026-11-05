@@ -27,7 +27,7 @@ def frame(direction="LONG"):
         last.update({"open": 108.0, "high": 112.0, "low": 107.0,
                      "close": 110.0, "ema20": 109.0, "ema50": 105.0,
                      "ema200": 100.0})
-    else:
+    elif direction == "SHORT":
         last.update({"open": 92.0, "high": 93.0, "low": 88.0,
                      "close": 90.0, "ema20": 91.0, "ema50": 95.0,
                      "ema200": 100.0})
