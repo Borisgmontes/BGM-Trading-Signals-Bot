@@ -58,3 +58,18 @@ def test_settings_accept_advanced_indicators(monkeypatch):
     })
     assert "fibonacci" in saved["modules"]
     assert saved["min_score"]==3
+
+def test_generated_candidate_is_tracked_without_manual_confirmation(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    api._MEM_SIGNALS.clear()
+    api._MEM_SIGNALS.append({
+        "id":"4","candle_id":"300000","timeframe":"5m","direction":"SHORT",
+        "entry":100.0,"stop":103.0,"target":95.0,"status":"CANDIDATE","result":None,
+    })
+    candles=pd.DataFrame([{"open_time":600000,"high":104.0,"low":99.0}])
+    closed=api.track_open_signals(candles,"5m")
+    assert len(closed)==1
+    assert api._MEM_SIGNALS[0]["result"]=="LOSS"
+    assert api._MEM_SIGNALS[0]["status"]=="CLOSED"
+    assert api.list_signals()==[]
+    assert api.list_trades()["trades"][0]["result"]=="LOSS"
