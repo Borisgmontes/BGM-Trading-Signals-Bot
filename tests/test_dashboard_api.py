@@ -46,7 +46,8 @@ def test_dashboard_signal_can_be_confirmed_in_memory(monkeypatch):
         "status": "CANDIDATE", "created_at": None,
     })
     assert api.update_signal("1", "CONFIRMED") is True
-    assert api.list_signals()[0]["status"] == "CONFIRMED"
+    assert api.list_signals() == []
+    assert api.list_trades()["trades"][0]["status"] == "CONFIRMED"
     assert api.update_signal("1", "DISCARDED") is False
 
 
