@@ -44,7 +44,7 @@ def _load_vapid_key():
             lines = [line.strip() for line in key_text.splitlines() if line.strip()]
             start = next(i for i, line in enumerate(lines) if line.startswith("-----BEGIN "))
             end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("-----END "))
-            pem = "\\n".join(lines[start:end + 1]) + "\\n"
+            pem = "\n".join(lines[start:end + 1]) + "\n"
             vapid = Vapid.from_pem(pem.encode("utf-8"))
         else:
             vapid = Vapid.from_string(key_text)
