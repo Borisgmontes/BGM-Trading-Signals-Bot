@@ -161,7 +161,7 @@ def open_signal_timeframes():
     if not os.getenv("DATABASE_URL", "").strip():
         return sorted({x.get("timeframe") for x in _MEM_SIGNALS if x.get("status")=="CONFIRMED" and not x.get("result")})
     with _db() as conn:
-        rows=conn.execute("SELECT DISTINCT timeframe FROM bgm_dashboard_signals WHERE status='CONFIRMED' AND result IS NULL").fetchall()
+        rows=conn.execute("SELECT DISTINCT timeframe FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL").fetchall()
     return [r["timeframe"] for r in rows]
 
 
@@ -169,7 +169,7 @@ def track_open_signals(df,timeframe):
     candles=df.to_dict("records"); closed=[]
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
-            if item.get("status")!="CONFIRMED" or item.get("result") or item.get("timeframe")!=timeframe: continue
+            if item.get("status") not in ("CANDIDATE","CONFIRMED") or item.get("result") or item.get("timeframe")!=timeframe: continue
             try: entry_ms=int(item["candle_id"])
             except (TypeError,ValueError): continue
             for candle in candles:
@@ -192,7 +192,7 @@ def track_open_signals(df,timeframe):
                 result,reason=resolve_directional_outcome(row["direction"],candle["high"],candle["low"],row["stop"],row["target"])
                 if result:
                     updated=conn.execute("""UPDATE bgm_dashboard_signals SET status='CLOSED',result=%s,result_reason=%s,
-                      closed_at=now(),last_checked_candle=%s WHERE id=%s AND status='CONFIRMED' AND result IS NULL
+                      closed_at=now(),last_checked_candle=%s WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL
                       RETURNING id,result,result_reason""",(result,reason,candle_ms,row["id"])).fetchone()
                     if updated: closed.append(dict(updated))
                     break
