@@ -3,6 +3,8 @@ import json, os, hmac, logging, base64
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
+from radar_engine import validate_radar_config
+from signal_tracker import resolve_directional_outcome
 import psycopg
 from psycopg.rows import dict_row
 
@@ -84,9 +86,12 @@ def init_dashboard_db():
           entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
           score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION,
           confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(candle_id,timeframe))""")
+          result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
+          UNIQUE(candle_id,timeframe))""")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result TEXT")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result_reason TEXT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS last_checked_candle BIGINT")
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
@@ -96,16 +101,10 @@ def get_settings():
         return dict(row["config"]) if row else dict(DEFAULT)
 
 def set_settings(config):
-    modules=config.get("modules")
-    if not isinstance(modules,list) or not modules or len(set(modules))!=len(modules) or not set(modules).issubset({"trend","rsi","macd","volume","atr","bollinger","liquidity","bos"}):
-        raise ValueError("Selecciona al menos un indicador válido.")
-    tf=config.get("timeframe")
-    if tf not in ("5m","15m","1h","4h"): raise ValueError("Temporalidad no válida.")
-    score=int(config.get("min_score",3))
-    if not 1<=score<=len(modules): raise ValueError("Las confirmaciones mínimas no son válidas.")
-    rr=float(config.get("target_r",2))
-    if rr not in (1.5,2.0,3.0): raise ValueError("TP permitido: 1.5R, 2R o 3R.")
-    clean={"timeframe":tf,"modules":modules,"min_score":score,"target_r":rr,"enabled":True}
+    clean = {"symbol":"BTCUSDT","timeframe":config.get("timeframe"),"modules":config.get("modules"),
+             "min_score":config.get("min_score",3),"target_r":config.get("target_r",2.0),
+             "enabled":bool(config.get("enabled",True))}
+    validate_radar_config(clean)
     if not os.getenv("DATABASE_URL", "").strip():
         _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
         return clean
@@ -113,51 +112,93 @@ def set_settings(config):
         conn.execute("INSERT INTO bgm_dashboard_config(id,config,updated_at) VALUES(1,%s,now()) ON CONFLICT(id) DO UPDATE SET config=EXCLUDED.config,updated_at=now()", (json.dumps(clean),))
     return clean
 
+def _serialize_signal(row):
+    d=dict(row); d["id"]=str(d["id"]); d["confirmations"]=list(d.get("confirmations") or [])
+    for key in ("created_at","closed_at"):
+        if d.get(key) and hasattr(d[key],"isoformat"): d[key]=d[key].isoformat()
+    return d
+
+
 def list_signals():
     if not os.getenv("DATABASE_URL", "").strip():
-        return [dict(x) for x in reversed(_MEM_SIGNALS[-30:]) if x["status"] in ("CANDIDATE","CONFIRMED")]
+        return [dict(x) for x in reversed(_MEM_SIGNALS) if x["status"]=="CANDIDATE"][-30:]
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
-          confirmations,status,created_at FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED')
-          ORDER BY id DESC LIMIT 30""").fetchall()
-    out=[]
-    for r in rows:
-        d=dict(r); d["id"]=str(d["id"]); d["confirmations"]=list(d["confirmations"] or [])
-        d["created_at"]=d["created_at"].isoformat() if d["created_at"] else None
-        out.append(d)
-    return out
+          confirmations,status,created_at FROM bgm_dashboard_signals WHERE status='CANDIDATE' ORDER BY id DESC LIMIT 30""").fetchall()
+    return [_serialize_signal(r) for r in rows]
+
 
 def list_trades():
     if not os.getenv("DATABASE_URL", "").strip():
-        rows=[dict(x) for x in _MEM_SIGNALS if x.get("status")=="CONFIRMED"]
-        for x in rows:
-            x.setdefault("result",None); x.setdefault("closed_at",None)
+        rows=[dict(x) for x in _MEM_SIGNALS if x.get("status") in ("CONFIRMED","CLOSED")]
     else:
         with _db() as conn:
             rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
-              confirmations,status,result,created_at,closed_at FROM bgm_dashboard_signals
-              WHERE status='CONFIRMED' ORDER BY id DESC LIMIT 100""").fetchall()
-        rows=[dict(r) for r in rows]
-        for x in rows:
-            x["id"]=str(x["id"]); x["confirmations"]=list(x["confirmations"] or [])
-            x["created_at"]=x["created_at"].isoformat() if x["created_at"] else None
-            x["closed_at"]=x["closed_at"].isoformat() if x["closed_at"] else None
-    wins=sum(1 for x in rows if x.get("result")=="WIN")
-    losses=sum(1 for x in rows if x.get("result")=="LOSS")
+              confirmations,status,result,result_reason,created_at,closed_at FROM bgm_dashboard_signals
+              WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 500""").fetchall()
+        rows=[_serialize_signal(r) for r in rows]
+    wins=sum(x.get("result")=="WIN" for x in rows); losses=sum(x.get("result")=="LOSS" for x in rows)
     closed=wins+losses
+    r_values=[float(x.get("rr") or 2.0) if x.get("result")=="WIN" else -1.0
+              for x in rows if x.get("result") in ("WIN","LOSS")]
+    gp=sum(v for v in r_values if v>0); gl=abs(sum(v for v in r_values if v<0))
     return {"trades":rows,"stats":{"total":len(rows),"wins":wins,"losses":losses,
-            "win_rate":round(100*wins/closed,1) if closed else None}}
+      "open":sum(x.get("status")=="CONFIRMED" for x in rows),
+      "win_rate":round(100*wins/closed,1) if closed else None,
+      "profit_factor":round(gp/gl,2) if gl else (None if not gp else "∞"),"net_r":round(sum(r_values),2)}}
+
 
 def update_trade_result(signal_id,result):
-    if result not in ("WIN","LOSS","BE"): raise ValueError("Resultado no válido.")
+    raise ValueError("El resultado se calcula automáticamente al tocar SL o TP.")
+
+
+def track_open_signals(df,timeframe):
+    candles=df.to_dict("records"); closed=[]
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
-            if str(item["id"])==str(signal_id) and item.get("status")=="CONFIRMED":
-                item["result"]=result; item["closed_at"]=_utc_now(); return True
+            if item.get("status")!="CONFIRMED" or item.get("result") or item.get("timeframe")!=timeframe: continue
+            try: entry_ms=int(item["candle_id"])
+            except (TypeError,ValueError): continue
+            for candle in candles:
+                if int(candle["open_time"])<=entry_ms: continue
+                result,reason=resolve_directional_outcome(item["direction"],candle["high"],candle["low"],item["stop"],item["target"])
+                if result:
+                    item.update({"status":"CLOSED","result":result,"result_reason":reason,"closed_at":_utc_now()})
+                    closed.append(dict(item)); break
+        return closed
+    with _db() as conn:
+        rows=conn.execute("""SELECT id,candle_id,direction,stop,target,last_checked_candle
+          FROM bgm_dashboard_signals WHERE status='CONFIRMED' AND result IS NULL AND timeframe=%s ORDER BY id""",(timeframe,)).fetchall()
+        for row in rows:
+            try: entry_ms=int(row["candle_id"])
+            except (TypeError,ValueError): continue
+            last_checked=int(row["last_checked_candle"] or entry_ms)
+            for candle in candles:
+                candle_ms=int(candle["open_time"])
+                if candle_ms<=max(entry_ms,last_checked): continue
+                result,reason=resolve_directional_outcome(row["direction"],candle["high"],candle["low"],row["stop"],row["target"])
+                if result:
+                    updated=conn.execute("""UPDATE bgm_dashboard_signals SET status='CLOSED',result=%s,result_reason=%s,
+                      closed_at=now(),last_checked_candle=%s WHERE id=%s AND status='CONFIRMED' AND result IS NULL
+                      RETURNING id,result,result_reason""",(result,reason,candle_ms,row["id"])).fetchone()
+                    if updated: closed.append(dict(updated))
+                    break
+                last_checked=candle_ms
+            conn.execute("""UPDATE bgm_dashboard_signals SET last_checked_candle=%s
+              WHERE id=%s AND status='CONFIRMED' AND result IS NULL""",(last_checked,row["id"]))
+    return closed
+
+
+def update_signal(signal_id,status):
+    if status not in ("CONFIRMED","DISCARDED"): raise ValueError("Estado no válido.")
+    if not os.getenv("DATABASE_URL", "").strip():
+        for item in _MEM_SIGNALS:
+            if str(item["id"])==str(signal_id) and item["status"]=="CANDIDATE":
+                item["status"]=status; item["confirmed_at"]=_utc_now() if status=="CONFIRMED" else None
+                return True
         return False
     with _db() as conn:
-        cur=conn.execute("""UPDATE bgm_dashboard_signals SET result=%s,closed_at=now()
-          WHERE id=%s AND status='CONFIRMED'""",(result,int(signal_id)))
+        cur=conn.execute("UPDATE bgm_dashboard_signals SET status=%s WHERE id=%s AND status='CANDIDATE'",(status,int(signal_id)))
         return cur.rowcount>0
 
 def save_subscription(sub):
@@ -256,6 +297,7 @@ def scan_dashboard():
             "success_count": _SCAN_STATUS["success_count"] + 1,
             "last_error": None,
         })
+        track_open_signals(df,cfg["timeframe"])
         candle_id,signal=evaluate_radar(df,cfg)
         if not signal:
             log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=none",
@@ -269,7 +311,7 @@ def scan_dashboard():
                 log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s price=%.2f signal=duplicate",
                          cfg["timeframe"],len(df),price)
                 return
-            signal_row=dict(signal,id=str(_MEM_NEXT_ID),status="CANDIDATE",created_at=None)
+            signal_row=dict(signal,id=str(_MEM_NEXT_ID),status="CANDIDATE",created_at=_utc_now(),result=None,closed_at=None)
             _MEM_NEXT_ID += 1
             _MEM_SIGNALS.append(signal_row)
             _SCAN_STATUS["last_signal_at"] = _utc_now()
@@ -279,7 +321,7 @@ def scan_dashboard():
             return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
-              probability,confirmations) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              probability,confirmations,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
               ON CONFLICT(candle_id,timeframe) DO NOTHING RETURNING id""",
               (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
                signal["score"],signal["maximum"],probability,json.dumps(signal["confirmations"]))).fetchone()
