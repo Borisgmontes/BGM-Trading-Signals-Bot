@@ -123,6 +123,18 @@ def advanced_checks(df, enabled):
     if "supertrend" in enabled:
         long_checks["Supertrend"] = int(cur.get("supertrend_dir", 0)) == 1
         short_checks["Supertrend"] = int(cur.get("supertrend_dir", 0)) == -1
+    if "divergence" in enabled:
+        recent = df.tail(80).reset_index(drop=True)
+        highs, lows = _swing_points(recent, 3, 3)
+        bull_div = bear_div = False
+        if len(lows) >= 2:
+            (i1, p1), (i2, p2) = lows[-2:]
+            bull_div = p2 < p1 and float(recent["rsi"].iloc[i2]) > float(recent["rsi"].iloc[i1])
+        if len(highs) >= 2:
+            (i1, p1), (i2, p2) = highs[-2:]
+            bear_div = p2 > p1 and float(recent["rsi"].iloc[i2]) < float(recent["rsi"].iloc[i1])
+        long_checks["Divergencia RSI alcista"] = bool(bull_div)
+        short_checks["Divergencia RSI bajista"] = bool(bear_div)
     if "fvg" in enabled:
         long_checks["FVG alcista"] = float(cur["low"]) > float(df.iloc[-3]["high"])
         short_checks["FVG bajista"] = float(cur["high"]) < float(df.iloc[-3]["low"])
