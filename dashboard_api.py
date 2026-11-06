@@ -159,7 +159,7 @@ def update_trade_result(signal_id,result):
 
 def open_signal_timeframes():
     if not os.getenv("DATABASE_URL", "").strip():
-        return sorted({x.get("timeframe") for x in _MEM_SIGNALS if x.get("status")=="CONFIRMED" and not x.get("result")})
+        return sorted({x.get("timeframe") for x in _MEM_SIGNALS if x.get("status") in ("CANDIDATE","CONFIRMED") and not x.get("result")})
     with _db() as conn:
         rows=conn.execute("SELECT DISTINCT timeframe FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL").fetchall()
     return [r["timeframe"] for r in rows]
@@ -181,7 +181,7 @@ def track_open_signals(df,timeframe):
         return closed
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,direction,stop,target,last_checked_candle
-          FROM bgm_dashboard_signals WHERE status='CONFIRMED' AND result IS NULL AND timeframe=%s ORDER BY id""",(timeframe,)).fetchall()
+          FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL AND timeframe=%s ORDER BY id""",(timeframe,)).fetchall()
         for row in rows:
             try: entry_ms=int(row["candle_id"])
             except (TypeError,ValueError): continue
@@ -198,7 +198,7 @@ def track_open_signals(df,timeframe):
                     break
                 last_checked=candle_ms
             conn.execute("""UPDATE bgm_dashboard_signals SET last_checked_candle=%s
-              WHERE id=%s AND status='CONFIRMED' AND result IS NULL""",(last_checked,row["id"]))
+              WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL""",(last_checked,row["id"]))
     return closed
 
 
