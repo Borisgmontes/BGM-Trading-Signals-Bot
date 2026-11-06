@@ -139,8 +139,13 @@ def list_trades():
         rows=[_serialize_signal(r) for r in rows]
     wins=sum(x.get("result")=="WIN" for x in rows); losses=sum(x.get("result")=="LOSS" for x in rows)
     closed=wins+losses
-    r_values=[float(x.get("rr") or 2.0) if x.get("result")=="WIN" else -1.0
-              for x in rows if x.get("result") in ("WIN","LOSS")]
+    r_values=[]
+    for x in rows:
+        if x.get("result") not in ("WIN","LOSS"): continue
+        risk=abs(float(x["entry"])-float(x["stop"]))
+        reward=abs(float(x["target"])-float(x["entry"]))
+        multiple=(reward/risk) if risk else 0.0
+        r_values.append(multiple if x["result"]=="WIN" else -1.0)
     gp=sum(v for v in r_values if v>0); gl=abs(sum(v for v in r_values if v<0))
     return {"trades":rows,"stats":{"total":len(rows),"wins":wins,"losses":losses,
       "open":sum(x.get("status")=="CONFIRMED" for x in rows),
@@ -150,6 +155,14 @@ def list_trades():
 
 def update_trade_result(signal_id,result):
     raise ValueError("El resultado se calcula automáticamente al tocar SL o TP.")
+
+
+def open_signal_timeframes():
+    if not os.getenv("DATABASE_URL", "").strip():
+        return sorted({x.get("timeframe") for x in _MEM_SIGNALS if x.get("status")=="CONFIRMED" and not x.get("result")})
+    with _db() as conn:
+        rows=conn.execute("SELECT DISTINCT timeframe FROM bgm_dashboard_signals WHERE status='CONFIRMED' AND result IS NULL").fetchall()
+    return [r["timeframe"] for r in rows]
 
 
 def track_open_signals(df,timeframe):
@@ -297,7 +310,13 @@ def scan_dashboard():
             "success_count": _SCAN_STATUS["success_count"] + 1,
             "last_error": None,
         })
-        track_open_signals(df,cfg["timeframe"])
+        active_timeframes=open_signal_timeframes()
+        for active_tf in active_timeframes:
+            if active_tf == cfg["timeframe"]:
+                track_open_signals(df,active_tf)
+            else:
+                active_df=fetch_radar_candles("BTCUSDT",active_tf)
+                track_open_signals(active_df,active_tf)
         candle_id,signal=evaluate_radar(df,cfg)
         if not signal:
             log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=none",
