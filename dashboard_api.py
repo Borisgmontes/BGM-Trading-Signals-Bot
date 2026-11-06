@@ -1,5 +1,5 @@
 """Private single-owner PWA dashboard API and web-push delivery."""
-import json, os, hmac, logging
+import json, os, hmac, logging, base64
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -31,6 +31,38 @@ def _utc_now():
 
 def scan_status():
     return dict(_SCAN_STATUS)
+
+
+def _load_vapid_key():
+    """Load PEM or base64url VAPID private keys and verify their public pair."""
+    try:
+        from py_vapid import Vapid
+        from cryptography.hazmat.primitives import serialization
+
+        key_text = VAPID_PRIVATE.strip()
+        if "-----BEGIN" in key_text:
+            lines = [line.strip() for line in key_text.splitlines() if line.strip()]
+            start = next(i for i, line in enumerate(lines) if line.startswith("-----BEGIN "))
+            end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("-----END "))
+            pem = "\\n".join(lines[start:end + 1]) + "\\n"
+            vapid = Vapid.from_pem(pem.encode("utf-8"))
+        else:
+            vapid = Vapid.from_string(key_text)
+
+        public_raw = vapid.public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+        derived_public = base64.urlsafe_b64encode(public_raw).rstrip(b"=").decode("ascii")
+        configured_public = VAPID_PUBLIC.strip().rstrip("=")
+        if not configured_public or not hmac.compare_digest(derived_public, configured_public):
+            raise ValueError("VAPID_PUBLIC_KEY no corresponde a VAPID_PRIVATE_KEY.")
+        return vapid
+    except Exception as exc:
+        raise RuntimeError(
+            "Clave VAPID inválida: revisa que VAPID_PRIVATE_KEY sea PEM o base64url "
+            "y que corresponda a VAPID_PUBLIC_KEY."
+        ) from exc
 
 def _db():
     url=os.getenv("DATABASE_URL","").strip()
@@ -156,9 +188,14 @@ def _push(signal):
     sent = 0
     try:
         from pywebpush import webpush
+        vapid_key = _load_vapid_key()
     except ImportError:
         log.error("pywebpush dependency missing")
         _SCAN_STATUS["last_push_error"] = "Falta la dependencia pywebpush."
+        return 0
+    except RuntimeError as exc:
+        _SCAN_STATUS["last_push_error"] = str(exc)
+        log.error("Push configuration invalid: %s", exc)
         return 0
     if not os.getenv("DATABASE_URL", "").strip():
         rows=[{"endpoint":k,"subscription":v} for k,v in _MEM_SUBSCRIPTIONS.items()]
@@ -173,7 +210,7 @@ def _push(signal):
     errors = []
     for row in rows:
         try:
-            webpush(subscription_info=dict(row["subscription"]),data=payload,vapid_private_key=VAPID_PRIVATE,
+            webpush(subscription_info=dict(row["subscription"]),data=payload,vapid_private_key=vapid_key,
               vapid_claims={"sub":VAPID_EMAIL})
             sent += 1
         except Exception as exc:
