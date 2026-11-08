@@ -3,7 +3,18 @@
   const timeframes=['1m','5m','15m','1h','4h','1d'], seconds={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
   const groups=[['long','Entrada LONG'],['short','Entrada SHORT'],['longExit','Salida LONG'],['shortExit','Salida SHORT']];
   const state={rules:{long:[],short:[],longExit:[],shortExit:[]},active:null};
-  const load=()=>{try{const v=JSON.parse(localStorage.getItem(STORE)||'[]');return Array.isArray(v)?v:[]}catch{return[]}};
+  const load=()=>{try{const current=JSON.parse(localStorage.getItem(STORE)||'null');if(Array.isArray(current))return current;
+    const legacy=JSON.parse(localStorage.getItem('bgmQuantLab.strategyLibrary.v3')||'[]');
+    if(!Array.isArray(legacy))return [];
+    const migrated=legacy.map(item=>{const tf=item.config?.timeframe||'5m';const strategy={...item.strategy,
+      indicator_settings:item.strategy?.indicator_settings||{},
+      long_conditions:(item.strategy?.long_conditions||[]).map(r=>({...r,timeframe:r.timeframe||tf})),
+      short_conditions:(item.strategy?.short_conditions||[]).map(r=>({...r,timeframe:r.timeframe||tf})),
+      long_exit_conditions:(item.strategy?.long_exit_conditions||[]).map(r=>({...r,timeframe:r.timeframe||tf})),
+      short_exit_conditions:(item.strategy?.short_exit_conditions||[]).map(r=>({...r,timeframe:r.timeframe||tf}))};
+      return {...item,strategy};});
+    localStorage.setItem(STORE,JSON.stringify(migrated));return migrated;
+    }catch{return[]}};
   const save=items=>localStorage.setItem(STORE,JSON.stringify(items));
   function settings(){
     const ema=$('emaPeriods').value.split(',').map(x=>Number(x.trim())).filter(Number.isFinite);
@@ -56,6 +67,7 @@
     groups.forEach(([key,label])=>{const box=document.createElement('div');box.className='panel';box.style.padding='12px';box.innerHTML='<div class="head"><h2>'+label+'</h2><button type="button" class="btn secondary" data-add="'+key+'">+ Regla</button></div><div id="rules-'+key+'" class="grid" style="gap:7px"></div>';(key==='long'||key==='short'?$('entryRules'):$('exitRules')).append(box)});
     host.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>addRule(b.dataset.add)));
     $('refreshCatalog').addEventListener('click',()=>{try{settings();renderRules();status('Catálogo actualizado con los períodos seleccionados.')}catch(e){status(e.message,true)}});
+    $('timeframe').addEventListener('change',()=>{const base=$('timeframe').value;Object.keys(state.rules).forEach(k=>state.rules[k].forEach(r=>{if(r.timeframe&&seconds[r.timeframe]<seconds[base])r.timeframe=base}));renderRules();status('Temporalidad base actualizada. Las reglas que quedaron por debajo se ajustaron a '+base+'.')});
     ['emaPeriods','crossPairs','rsiPeriod','atrPeriod','bbPeriod','bbStd','macdFast','macdSlow','macdSignal','volumePeriod'].forEach(id=>$(id).addEventListener('change',()=>{try{settings();renderRules();status('Parámetros actualizados. Las reglas con períodos retirados deben revisarse.')}catch(e){status(e.message,true)}}));
     $('importNatural').addEventListener('click',importNatural);
     $('resetVisual').addEventListener('click',()=>{Object.keys(state.rules).forEach(k=>state.rules[k]=[]);renderRules();status('Reglas visuales eliminadas.')});
