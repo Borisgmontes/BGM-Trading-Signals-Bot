@@ -51,10 +51,10 @@
         const row=document.createElement('div'); row.style.cssText='display:grid;grid-template-columns:minmax(0,1.5fr) 65px minmax(70px,1fr) 32px;gap:5px;align-items:center';
         const select=document.createElement('select'); select.innerHTML=featureOptions(); select.value=r.feature;
         const op=document.createElement('select'); op.innerHTML=['>','<','>=','<='].map(x=>'<option>'+x+'</option>').join(''); op.value=r.operator;
-        const val=document.createElement('input'); val.type='number'; val.step='any'; val.value=r.value; val.title='Valor de comparación';
+        const val=document.createElement('input'); val.type='text'; val.value=r.value; val.placeholder='valor o ema_200'; val.title='Valor numérico o indicador para comparar';
         const del=document.createElement('button'); del.type='button'; del.className='btn secondary'; del.textContent='×'; del.title='Eliminar regla';
         select.addEventListener('change',()=>{r.feature=select.value;if(r.feature.startsWith('ema_')&&r.feature.includes('_cross_')){r.operator='>';r.value=0.5;renderRules()}});
-        op.addEventListener('change',()=>r.operator=op.value); val.addEventListener('change',()=>r.value=Number(val.value));
+        op.addEventListener('change',()=>r.operator=op.value); val.addEventListener('change',()=>{const n=Number(val.value);r.value=val.value.trim()!==''&&Number.isFinite(n)?n:val.value.trim()});
         del.addEventListener('click',()=>{state.rules[group].splice(i,1);renderRules()});
         row.append(select,op,val,del); box.append(row);
       });
@@ -63,7 +63,7 @@
   }
   function status(msg,bad=false){$('visualStatus').textContent=msg;$('visualStatus').className='statusline '+(bad?'warning':'ok')}
   function currentStrategy(){
-    const read=(key)=>state.rules[key].map(r=>({feature:r.feature,operator:r.operator,value:Number(r.value)}));
+    const read=(key)=>state.rules[key].map(r=>({feature:r.feature,operator:r.operator,value:(typeof r.value==='string'&&r.value.trim()!==''&&!Number.isFinite(Number(r.value)))?r.value:Number(r.value)}));
     const long=read('long'),short=read('short');
     if(!long.length||!short.length)throw Error('Define al menos una condición de entrada LONG y una SHORT.');
     const name=$('strategyName').value.trim();if(!name)throw Error('Escribe un nombre para la estrategia.');
