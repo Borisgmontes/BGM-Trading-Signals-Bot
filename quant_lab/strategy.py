@@ -31,6 +31,28 @@ class Strategy:
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
     def to_dict(self) -> dict:
         return {"name": self.name, "long_conditions": [asdict(x) for x in self.long_conditions], "short_conditions": [asdict(x) for x in self.short_conditions], "stop_atr": self.stop_atr, "reward_risk": self.reward_risk, "max_holding_bars": self.max_holding_bars}
+def strategy_from_dict(payload: dict) -> Strategy:
+    """Load a user-authored strategy JSON using the same strict schema as the engine."""
+    if not isinstance(payload, dict):
+        raise ValueError("Strategy JSON root must be an object.")
+    required = {"name", "long_conditions", "short_conditions"}
+    missing = required - payload.keys()
+    if missing:
+        raise ValueError(f"Missing strategy fields: {sorted(missing)}")
+    def conditions(items):
+        if not isinstance(items, list) or not items:
+            raise ValueError("Each direction must contain at least one condition.")
+        return tuple(Condition(**item) for item in items)
+    return Strategy(
+        name=str(payload["name"]),
+        long_conditions=conditions(payload["long_conditions"]),
+        short_conditions=conditions(payload["short_conditions"]),
+        stop_atr=float(payload.get("stop_atr", 1.8)),
+        reward_risk=float(payload.get("reward_risk", 2.0)),
+        max_holding_bars=int(payload.get("max_holding_bars", 48)),
+    )
+
+
 def generate_candidates(count: int, seed: int = 7) -> list[Strategy]:
     if count < 1 or count > 100_000: raise ValueError("count must be between 1 and 100000")
     rng = random.Random(seed)
