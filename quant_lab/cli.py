@@ -4,7 +4,7 @@ import argparse,json
 from pathlib import Path
 from .data import fetch_btc_candles
 from .indicators import add_indicators
-from .strategy import generate_candidates
+from .strategy import generate_candidates, strategy_from_dict
 from .validation import train_test_report,monte_carlo_trade_bootstrap
 from .ranking import score_candidate
 
@@ -14,10 +14,15 @@ def main():
     parser.add_argument("--candles",type=int,default=5000)
     parser.add_argument("--candidates",type=int,default=100)
     parser.add_argument("--seed",type=int,default=7)
+    parser.add_argument("--strategy-json",help="Run one user strategy exported by the dashboard")
     parser.add_argument("--output",default="quant_lab/results")
     args=parser.parse_args()
     data=add_indicators(fetch_btc_candles(args.timeframe,args.candles))
-    candidates=generate_candidates(args.candidates,args.seed)
+    if args.strategy_json:
+        payload=json.loads(Path(args.strategy_json).read_text(encoding="utf-8"))
+        candidates=[strategy_from_dict(payload.get("strategy", payload))]
+    else:
+        candidates=generate_candidates(args.candidates,args.seed)
     results=[]
     for strategy in candidates:
         try:
