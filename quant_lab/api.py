@@ -7,7 +7,7 @@ import math
 from flask import Flask, jsonify, request
 from .data import fetch_btc_candles
 from .indicators import add_indicators
-from .ranking import score_candidate
+from .ranking import score_candidate, score_training_candidate
 from .strategy import strategy_from_dict
 from .backtest import run_backtest
 from .validation import train_test_report
@@ -137,30 +137,42 @@ def optimize():
         stops = [_number(x, "stop_atr", .5, 5) for x in stops]
         targets = [_number(x, "reward_risk", .5, 6) for x in targets]
         frame = _market_data(timeframe, candles)
+        split = int(len(frame) * .70)
+        train_frame = frame.iloc[:split].reset_index(drop=True)
         rows = []
         for stop in stops:
             for target in targets:
                 candidate = replace(strategy, stop_atr=stop, reward_risk=target)
-                report = train_test_report(frame, candidate, fee_bps=fee, slippage_bps=slippage)
-                test = report["out_of_sample"]
-                quality = score_candidate(report)
+                train_result = run_backtest(train_frame, candidate, fee, slippage, equity)
+                training_quality = score_training_candidate(train_result.to_dict())
                 rows.append({
                     "stop_atr": stop, "reward_risk": target,
-                    "trades": test["trades"],
-                    "win_rate_pct": round(test["win_rate_pct"], 4),
-                    "profit_factor": test["profit_factor"],
-                    "net_return_pct": round(test["net_return_pct"], 4),
-                    "max_drawdown_pct": round(test["max_drawdown_pct"], 4),
-                    "research_score": quality["research_score"],
-                    "eligible_for_paper_testing": quality["eligible_for_paper_testing"]
+                    "trades_train": train_result.trades,
+                    "win_rate_train_pct": round(train_result.win_rate_pct, 4),
+                    "profit_factor_train": train_result.profit_factor,
+                    "net_return_train_pct": round(train_result.net_return_pct, 4),
+                    "max_drawdown_train_pct": round(train_result.max_drawdown_pct, 4),
+                    "training_score": training_quality["training_score"],
+                    "training_gates": training_quality["training_gates"]
                 })
-        rows.sort(key=lambda x: (x["research_score"], x["net_return_pct"]), reverse=True)
+        rows.sort(key=lambda x: (x["training_score"], x["net_return_train_pct"]), reverse=True)
+        best = rows[0]
+        selected_strategy = replace(strategy, stop_atr=best["stop_atr"], reward_risk=best["reward_risk"])
+        validation = train_test_report(frame, selected_strategy, fee_bps=fee, slippage_bps=slippage)
+        selected_test = validation["out_of_sample"]
+        selected_quality = score_candidate(validation)
         return jsonify({
             "ok": True, "market": "BTCUSDT", "timeframe": timeframe,
             "candles_used": len(frame), "combinations_tested": len(rows),
             "ranking": rows,
-            "warning": "Parameter search can overfit. Treat this as exploratory; confirm with walk-forward and unseen data."
+            "selected": {
+                "stop_atr": best["stop_atr"], "reward_risk": best["reward_risk"],
+                "out_of_sample": _safe_result_from_dict(selected_test),
+                "quality": selected_quality
+            },
+            "warning": "Las combinaciones se ordenaron solo con datos TRAIN. La combinación ganadora se evaluó una sola vez en datos OUT-OF-SAMPLE. No selecciones parámetros mirando repetidamente el OOS."
         })
+
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception:
