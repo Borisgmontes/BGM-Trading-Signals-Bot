@@ -10,7 +10,8 @@ from .indicators import add_indicators
 from .ranking import score_candidate, score_training_candidate
 from .strategy import strategy_from_dict
 from .backtest import run_backtest
-from .validation import train_test_report\nfrom .multi_asset import MARKETS, fetch_market_data, run_market_backtest
+from .validation import train_test_report
+from .multi_asset import MARKETS, fetch_market_data, run_market_backtest
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = {
