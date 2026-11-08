@@ -12,6 +12,7 @@ from .strategy import strategy_from_dict
 from .backtest import run_backtest
 from .validation import train_test_report
 from .multi_asset import MARKETS, fetch_market_data, run_market_backtest
+from .nlp import interpret_strategy
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = {
@@ -81,6 +82,22 @@ def _safe_result(result):
     data["equity_curve"] = [round(float(x), 6) for x in data["equity_curve"]]
     data["trade_returns_pct"] = [round(float(x), 6) for x in data["trade_returns_pct"]]
     return data
+
+@app.route("/api/interpret", methods=["POST", "OPTIONS"])
+def interpret():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    try:
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValueError("JSON body must be an object.")
+        return jsonify({"ok": True, **interpret_strategy(payload.get("description", ""), payload.get("name"))})
+    except (ValueError, TypeError, KeyError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Strategy interpretation failed")
+        return jsonify({"ok": False, "error": "Interpretation failed. Check API logs and retry."}), 502
+
 
 @app.route("/api/backtest", methods=["POST", "OPTIONS"])
 def backtest():
