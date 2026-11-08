@@ -2,21 +2,41 @@
 from __future__ import annotations
 import argparse,json
 from pathlib import Path
-from .backtest import run_backtest
 from .data import fetch_btc_candles
 from .indicators import add_indicators
 from .strategy import generate_candidates
 from .validation import train_test_report,monte_carlo_trade_bootstrap
+from .ranking import score_candidate
+
 def main():
     parser=argparse.ArgumentParser(description="BGM Quant Lab BTC research MVP")
-    parser.add_argument("--timeframe",default="5m",choices=["1m","5m","15m","1h","4h","1d"]); parser.add_argument("--candles",type=int,default=5000); parser.add_argument("--candidates",type=int,default=100); parser.add_argument("--seed",type=int,default=7); parser.add_argument("--output",default="quant_lab/results"); args=parser.parse_args()
-    data=add_indicators(fetch_btc_candles(args.timeframe,args.candles)); candidates=generate_candidates(args.candidates,args.seed); results=[]
+    parser.add_argument("--timeframe",default="5m",choices=["1m","5m","15m","1h","4h","1d"])
+    parser.add_argument("--candles",type=int,default=5000)
+    parser.add_argument("--candidates",type=int,default=100)
+    parser.add_argument("--seed",type=int,default=7)
+    parser.add_argument("--output",default="quant_lab/results")
+    args=parser.parse_args()
+    data=add_indicators(fetch_btc_candles(args.timeframe,args.candles))
+    candidates=generate_candidates(args.candidates,args.seed)
+    results=[]
     for strategy in candidates:
         try:
-            report=train_test_report(data,strategy); test=report["out_of_sample"]
-            results.append({"strategy":strategy.to_dict(),"strategy_id":strategy.strategy_id,"validation":report,"rank_score":test["net_return_pct"],"monte_carlo":monte_carlo_trade_bootstrap(test["trade_returns_pct"]) if test["trade_returns_pct"] else None})
-        except ValueError as exc: results.append({"strategy_id":strategy.strategy_id,"error":str(exc)})
-    results.sort(key=lambda x:x.get("rank_score",float("-inf")),reverse=True); output=Path(args.output); output.mkdir(parents=True,exist_ok=True); target=output/"btc_candidates.json"
-    target.write_text(json.dumps({"market":"BTCUSDT","timeframe":args.timeframe,"candles":len(data),"candidates":results},indent=2),encoding="utf-8")
-    print(f"Processed {len(candidates)} candidates. Report: {target}"); print("Research only: no orders are sent and profitability is not guaranteed.")
-if __name__=="__main__": main()
+            report=train_test_report(data,strategy)
+            test=report["out_of_sample"]
+            quality=score_candidate(report)
+            results.append({"strategy":strategy.to_dict(),"strategy_id":strategy.strategy_id,
+                "validation":report,"quality":quality,
+                "monte_carlo":monte_carlo_trade_bootstrap(test["trade_returns_pct"])
+                if len(test["trade_returns_pct"]) >= 30 else None})
+        except ValueError as exc:
+            results.append({"strategy_id":strategy.strategy_id,"error":str(exc)})
+    results.sort(key=lambda x:x.get("quality",{}).get("research_score",0),reverse=True)
+    output=Path(args.output); output.mkdir(parents=True,exist_ok=True)
+    target=output/"btc_candidates.json"
+    target.write_text(json.dumps({"market":"BTCUSDT","timeframe":args.timeframe,
+        "candles":len(data),"candidates":results},indent=2,allow_nan=False),encoding="utf-8")
+    print(f"Processed {len(candidates)} candidates. Report: {target}")
+    print("Research only: no orders are sent and profitability is not guaranteed.")
+
+if __name__=="__main__":
+    main()
