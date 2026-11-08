@@ -43,6 +43,8 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
         raise ValueError(f"Data must include indicators: {sorted(required)}")
     long_signal = _condition_mask(df,strategy.long_conditions)
     short_signal = _condition_mask(df,strategy.short_conditions)
+    long_exit_signal = _condition_mask(df, strategy.long_exit_conditions) if strategy.long_exit_conditions else pd.Series(False, index=df.index)
+    short_exit_signal = _condition_mask(df, strategy.short_exit_conditions) if strategy.short_exit_conditions else pd.Series(False, index=df.index)
     cost = 2*(fee_bps+slippage_bps)/10000
     equity = initial_equity
     curve = [equity]
@@ -75,6 +77,10 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
                 break
             if target_hit:
                 exit_price,exit_i = target,j
+                break
+            # Rule-based exits are evaluated at candle close after protective stop/target checks.
+            if (direction == 1 and bool(long_exit_signal.iloc[j])) or (direction == -1 and bool(short_exit_signal.iloc[j])):
+                exit_price,exit_i = float(df["close"].iloc[j]),j
                 break
         # Unleveraged spot sizing: cap notional at 100% of equity and target max risk.
         stop_fraction = distance/entry
