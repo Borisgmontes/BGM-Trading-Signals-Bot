@@ -2,8 +2,8 @@
 from __future__ import annotations
 import argparse,json
 from pathlib import Path
-from .data import fetch_btc_candles
-from .api import _market_data\nfrom .strategy import TIMEFRAMES
+from .api import _market_data
+from .strategy import TIMEFRAMES
 from .strategy import generate_candidates, strategy_from_dict
 from .validation import train_test_report,monte_carlo_trade_bootstrap
 from .ranking import score_candidate
