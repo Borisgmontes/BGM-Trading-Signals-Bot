@@ -37,8 +37,16 @@ def fetch_market_data(symbol: str, timeframe: str = "1h", candles: int = 1500) -
         if raw is None or raw.empty:
             raise RuntimeError("Yahoo Finance no devolvió velas.")
         if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.get_level_values(0)
-        raw = raw.rename(columns={str(c).lower(): str(c).lower() for c in raw.columns})
+            chosen = None
+            for level in range(raw.columns.nlevels):
+                labels = {str(v).lower() for v in raw.columns.get_level_values(level)}
+                if {"open", "high", "low", "close"}.issubset(labels):
+                    chosen = level
+                    break
+            if chosen is None:
+                raise RuntimeError("Formato de columnas OHLCV no reconocido.")
+            raw.columns = raw.columns.get_level_values(chosen)
+        raw.columns = [str(c).lower() for c in raw.columns]
         needed = ["open", "high", "low", "close", "volume"]
         if any(c not in raw.columns for c in needed):
             raise RuntimeError("El proveedor no devolvió OHLCV completo.")
@@ -47,7 +55,7 @@ def fetch_market_data(symbol: str, timeframe: str = "1h", candles: int = 1500) -
         if timeframe == "4h":
             frame = frame.resample("4h").agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"}).dropna()
         frame = frame.tail(candles).reset_index()
-        time_col = "Datetime" if "Datetime" in frame.columns else "Date"
+        time_col = next((name for name in ("Datetime", "Date", "index") if name in frame.columns), frame.columns[0])
         frame = frame.rename(columns={time_col:"open_time"})
         frame["open_time"] = pd.to_datetime(frame["open_time"], utc=True)
         for col in needed:
