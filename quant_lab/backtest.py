@@ -76,7 +76,10 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
             if target_hit:
                 exit_price,exit_i = target,j
                 break
-        # Unleveraged spot sizing: cap notional at 100% of equity and target max risk.\n        stop_fraction = distance/entry\n        position_fraction = min(1.0, (strategy.risk_per_trade_pct/100)/stop_fraction)\n        net = position_fraction*(direction*(exit_price-entry)/entry-cost)
+        # Unleveraged spot sizing: cap notional at 100% of equity and target max risk.
+        stop_fraction = distance/entry
+        position_fraction = min(1.0, (strategy.risk_per_trade_pct/100)/stop_fraction)
+        net = position_fraction*(direction*(exit_price-entry)/entry-cost)
         equity *= max(0.0,1.0+net)
         returns.append(net*100)
         curve.append(equity)
