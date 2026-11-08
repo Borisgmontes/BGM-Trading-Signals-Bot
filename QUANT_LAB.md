@@ -12,6 +12,25 @@ Status: experimental research branch only. This module does not connect to a bro
 - quant_lab/ranking.py: transparent rule-based quality gates and a 0-100 research score. This is not a predictive AI model.
 - quant_lab/cli.py: research workflow and JSON report output.
 
+## HTTP API and dashboard
+
+The dashboard calls the separate Flask API service at `https://bgm-quant-lab-api.onrender.com`.
+
+- `GET /health`: service readiness.
+- `POST /api/backtest`: runs full-sample plus train/out-of-sample validation on downloaded, closed BTCUSDT candles.
+- `POST /api/optimize`: explores up to 25 Stop-ATR / reward-to-risk combinations and ranks them using the existing transparent OOS quality gates.
+- Both endpoints accept the dashboard JSON strategy, timeframe, candle count, fee and slippage assumptions. The API is research-only and sends no orders.
+- The free Render API may sleep between requests; first request can be slow. Public Binance.US market data is used; network/provider availability can affect requests.
+
+Run the API locally:
+
+    pip install -r requirements.txt
+    gunicorn --bind 0.0.0.0:8000 quant_lab.api:app
+
+Run one exported dashboard strategy locally:
+
+    python -m quant_lab.cli --timeframe 5m --candles 5000 --strategy-json strategy.json
+
 ## Run locally
 
     pip install -r requirements.txt
