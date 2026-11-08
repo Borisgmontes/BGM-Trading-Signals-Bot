@@ -29,6 +29,10 @@ def add_cors(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
+@app.get("/")
+def index():
+    return jsonify({"service": "BGM Quant Lab API", "health": "/health", "mode": "research-only"})
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "service": "bgm-quant-lab-api", "mode": "research-only"})
