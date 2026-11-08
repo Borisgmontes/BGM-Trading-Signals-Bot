@@ -4,7 +4,7 @@ import pandas as pd
 from quant_lab.indicators import add_indicators, normalize_indicator_settings
 from quant_lab.strategy import Condition, Strategy, strategy_from_dict
 from quant_lab.backtest import run_backtest
-from quant_lab.api import _market_data
+from quant_lab.api import _market_data, _load_request
 
 
 class ConfigurableMultiTimeframeTests(unittest.TestCase):
@@ -57,6 +57,18 @@ class ConfigurableMultiTimeframeTests(unittest.TestCase):
         )
         result = run_backtest(frame, strategy, fee_bps=0, slippage_bps=0)
         self.assertGreater(result.trades, 0)
+
+    def test_rejects_rule_timeframe_below_execution_timeframe(self):
+        payload = {
+            "timeframe": "5m",
+            "strategy": {
+                "name": "Invalid lower timeframe",
+                "long_conditions": [{"feature": "ema_200", "operator": ">", "value": 0, "timeframe": "1m"}],
+                "short_conditions": [{"feature": "ema_200", "operator": "<", "value": 0, "timeframe": "1m"}],
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "lower than execution timeframe"):
+            _load_request(payload)
 
     def test_higher_timeframe_values_only_appear_after_close(self):
         base_times = pd.date_range("2024-01-01", periods=600, freq="5min", tz="UTC")
