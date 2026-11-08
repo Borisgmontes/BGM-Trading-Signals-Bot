@@ -40,7 +40,7 @@ Run one exported dashboard strategy locally:
 ## Safeguards and current limitations
 
 1. Signals are evaluated on completed candles; simulated entries occur at the next candle open.
-2. Fees and slippage are deducted on entry and exit. The initial model is unleveraged spot-style return accounting.
+2. Fees and slippage are deducted on entry and exit. The simulator uses unleveraged spot-style sizing, caps notional at 100% of equity, and scales each position to a maximum configured risk percentage at the stop. Actual risk can be lower when the 100% notional cap binds.
 3. If stop and target are both touched in one OHLC candle, the simulator assumes the adverse stop happened first.
 4. Candidate generation uses only constrained, seeded rules. It is a search baseline, not a trained AI model.
 5. Out-of-sample data is not used to generate candidate rules. The rule-based score requires at least 30 out-of-sample trades, positive net return, profit factor >= 1.10 and drawdown <= 25% before a candidate is eligible for paper testing.
