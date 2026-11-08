@@ -18,7 +18,7 @@ The dashboard calls the separate Flask API service at `https://bgm-quant-lab-api
 
 - `GET /health`: service readiness.
 - `POST /api/backtest`: runs full-sample plus train/out-of-sample validation on downloaded, closed BTCUSDT candles.
-- `POST /api/optimize`: explores up to 25 Stop-ATR / reward-to-risk combinations and ranks them using the existing transparent OOS quality gates.
+- `POST /api/optimize`: explores up to 25 Stop-ATR / reward-to-risk combinations, ranks them using TRAIN data only, then evaluates the selected combination once on held-out OUT-OF-SAMPLE data.
 - Both endpoints accept the dashboard JSON strategy, timeframe, candle count, fee and slippage assumptions. The API is research-only and sends no orders.
 - The free Render API may sleep between requests; first request can be slow. Public Binance.US market data is used; network/provider availability can affect requests.
 
@@ -51,7 +51,7 @@ Run one exported dashboard strategy locally:
 ## Next stages
 
 - True rolling walk-forward optimizer with separate training and test windows.
-- Parameter-sensitivity analysis, strategy-family deduplication and multi-objective ranking.
+- Parameter-sensitivity analysis, strategy-family deduplication and multi-objective ranking. The first dashboard grid search uses TRAIN-only selection and a single OOS evaluation to reduce leakage.
 - Persist market data, experiments, strategies and metrics in SQLite/PostgreSQL.
 - Read-only MT5 symbol/specification adapter, then a separate demo-only execution bridge after validation.
 - Web dashboard for experiment control and strategy comparison.
