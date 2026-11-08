@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timezone\nimport pandas as pd
+from datetime import timezone
+import pandas as pd
 import math
 from flask import Flask, jsonify, request
 from .data import fetch_btc_candles
