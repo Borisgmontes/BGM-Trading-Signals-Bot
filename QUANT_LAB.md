@@ -10,7 +10,7 @@ Status: experimental research branch only. This module does not connect to a bro
 - quant_lab/backtest.py: signal on completed candle, entry at next bar open, ATR stop, R-multiple target, fee/slippage costs, and conservative stop-first handling when TP and SL touch in one candle.
 - quant_lab/validation.py: train/out-of-sample report, fixed-strategy walk-forward windows and bootstrap resampling of observed trade returns.
 - quant_lab/ranking.py: transparent rule-based quality gates and a 0-100 research score. This is not a predictive AI model.
-- quant_lab/cli.py: research workflow and JSON report output.
+- quant_lab/cli.py: research workflow and JSON report output; supports `--fee-bps`, `--slippage-bps` and `--initial-equity` so local reports use the same assumptions as the dashboard/API.
 
 ## HTTP API and dashboard
 
@@ -19,7 +19,7 @@ The dashboard calls the separate Flask API service at `https://bgm-quant-lab-api
 - `GET /health`: service readiness.
 - `POST /api/backtest`: runs full-sample plus train/out-of-sample validation on downloaded, closed BTCUSDT candles.
 - `POST /api/optimize`: explores up to 25 Stop-ATR / reward-to-risk combinations, ranks them using TRAIN data only, then evaluates the selected combination once on held-out OUT-OF-SAMPLE data.
-- Both endpoints accept the dashboard JSON strategy, timeframe, candle count, fee and slippage assumptions. The API is research-only and sends no orders.
+- Both endpoints accept the dashboard JSON strategy, timeframe, candle count, fee and slippage assumptions, plus starting capital. The API is research-only and sends no orders.
 - The free Render API may sleep between requests; first request can be slow. Public Binance.US market data is used; network/provider availability can affect requests.
 
 Run the API locally:
@@ -29,12 +29,12 @@ Run the API locally:
 
 Run one exported dashboard strategy locally:
 
-    python -m quant_lab.cli --timeframe 5m --candles 5000 --strategy-json strategy.json
+    python -m quant_lab.cli --timeframe 5m --candles 5000 --strategy-json strategy.json --fee-bps 5 --slippage-bps 2 --initial-equity 10000
 
 ## Run locally
 
     pip install -r requirements.txt
-    python -m quant_lab.cli --timeframe 5m --candles 5000 --candidates 100
+    python -m quant_lab.cli --timeframe 5m --candles 5000 --candidates 100 --fee-bps 5 --slippage-bps 2 --initial-equity 10000
     python -m unittest tests.test_quant_lab -v
 
 ## Safeguards and current limitations
