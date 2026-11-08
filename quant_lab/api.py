@@ -200,12 +200,23 @@ def multi_backtest():
             raise ValueError("config debe ser un objeto JSON.")
         frame = fetch_market_data(symbol, timeframe, candles)
         result = run_market_backtest(frame, config)
-        # The complete OHLCV/indicator series is returned for the interactive Plotly chart.
+        split = int(len(frame) * 0.70)
+        train_result = run_market_backtest(frame.iloc[:split].reset_index(drop=True), config)
+        warmup = max(200, int(config.get("ema_trend", 200)))
+        oos_start = max(0, split - warmup)
+        oos_result = run_market_backtest(frame.iloc[oos_start:].reset_index(drop=True), config)
+        def compact(report):
+            keys = ("initial_equity", "final_equity", "net_profit", "trades", "wins",
+                    "losses", "win_rate_pct", "profit_factor", "max_drawdown_pct", "net_return_pct")
+            return {key: report[key] for key in keys}
         return jsonify({"ok": True, "symbol": symbol, "market_name": MARKETS[symbol],
                         "timeframe": timeframe, "candles_used": len(frame),
                         "data_start": frame["open_time"].iloc[0].isoformat(),
                         "data_end": frame["open_time"].iloc[-1].isoformat(),
                         "result": result,
+                        "validation": {"train": compact(train_result), "out_of_sample": compact(oos_result),
+                                       "train_fraction": 0.70,
+                                       "note": "Estrategia fija; 30% final fuera de muestra. Evita optimizar mirando repetidamente el OOS."},
                         "disclaimer": "Simulación histórica. No predice resultados ni ejecuta órdenes."})
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
