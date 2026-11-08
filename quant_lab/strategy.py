@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib, json, random, math
-ALLOWED_FEATURES = {"close", "ema_10", "ema_20", "ema_50", "ema_100", "ema_200", "rsi_14", "atr_14", "bb_upper", "bb_lower", "volume_ratio", "macd_hist"}
+ALLOWED_FEATURES = {"close", "ema_10", "ema_20", "ema_50", "ema_100", "ema_200", "rsi_14", "atr_14", "bb_upper", "bb_lower", "volume_ratio", "macd_hist", "ema_10_cross_up_ema_20", "ema_10_cross_down_ema_20", "ema_20_cross_up_ema_50", "ema_20_cross_down_ema_50", "ema_50_cross_up_ema_200", "ema_50_cross_down_ema_200", "session_asia_open", "session_london_open", "session_new_york_open"}
 @dataclass(frozen=True)
 class Condition:
     feature: str
@@ -25,6 +25,8 @@ class Strategy:
     reward_risk: float = 2.0
     max_holding_bars: int = 48
     risk_per_trade_pct: float = 1.0
+    long_exit_conditions: tuple[Condition, ...] = ()
+    short_exit_conditions: tuple[Condition, ...] = ()
     def __post_init__(self):
         if not self.long_conditions or not self.short_conditions: raise ValueError("Both LONG and SHORT conditions are required.")
         if not 0.5 <= self.stop_atr <= 5: raise ValueError("stop_atr must be between 0.5 and 5.")
@@ -36,7 +38,7 @@ class Strategy:
         payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
     def to_dict(self) -> dict:
-        return {"name": self.name, "long_conditions": [asdict(x) for x in self.long_conditions], "short_conditions": [asdict(x) for x in self.short_conditions], "stop_atr": self.stop_atr, "reward_risk": self.reward_risk, "max_holding_bars": self.max_holding_bars, "risk_per_trade_pct": self.risk_per_trade_pct}
+        return {"name": self.name, "long_conditions": [asdict(x) for x in self.long_conditions], "short_conditions": [asdict(x) for x in self.short_conditions], "stop_atr": self.stop_atr, "reward_risk": self.reward_risk, "max_holding_bars": self.max_holding_bars, "risk_per_trade_pct": self.risk_per_trade_pct, "long_exit_conditions": [asdict(x) for x in self.long_exit_conditions], "short_exit_conditions": [asdict(x) for x in self.short_exit_conditions]}
 def strategy_from_dict(payload: dict) -> Strategy:
     """Load a user-authored strategy JSON using the same strict schema as the engine."""
     if not isinstance(payload, dict):
@@ -57,6 +59,8 @@ def strategy_from_dict(payload: dict) -> Strategy:
         reward_risk=float(payload.get("reward_risk", 2.0)),
         max_holding_bars=int(payload.get("max_holding_bars", 48)),
         risk_per_trade_pct=float(payload.get("risk_per_trade_pct", 1.0)),
+        long_exit_conditions=tuple(Condition(**x) for x in payload.get("long_exit_conditions", [])),
+        short_exit_conditions=tuple(Condition(**x) for x in payload.get("short_exit_conditions", [])),
     )
 
 
