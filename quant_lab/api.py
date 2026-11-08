@@ -124,9 +124,9 @@ def backtest():
         })
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
+    except Exception as exc:
         app.logger.exception("Backtest failed")
-        return jsonify({"ok": False, "error": "Backtest failed. Check API logs and retry."}), 502
+        return jsonify({"ok": False, "error": "Backtest failed: " + str(exc)[:300]}), 502
 
 def _safe_result_from_dict(data):
     result = dict(data)
@@ -193,9 +193,9 @@ def optimize():
 
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
+    except Exception as exc:
         app.logger.exception("Optimization failed")
-        return jsonify({"ok": False, "error": "Optimization failed. Check API logs and retry."}), 502
+        return jsonify({"ok": False, "error": "Optimization failed: " + str(exc)[:300]}), 502
 
 
 @app.get("/api/markets")
