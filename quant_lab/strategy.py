@@ -20,17 +20,19 @@ class Strategy:
     stop_atr: float = 1.8
     reward_risk: float = 2.0
     max_holding_bars: int = 48
+    risk_per_trade_pct: float = 1.0
     def __post_init__(self):
         if not self.long_conditions or not self.short_conditions: raise ValueError("Both LONG and SHORT conditions are required.")
         if not 0.5 <= self.stop_atr <= 5: raise ValueError("stop_atr must be between 0.5 and 5.")
         if not 0.5 <= self.reward_risk <= 6: raise ValueError("reward_risk must be between 0.5 and 6.")
         if not 1 <= self.max_holding_bars <= 1000: raise ValueError("max_holding_bars must be between 1 and 1000.")
+        if not 0.1 <= self.risk_per_trade_pct <= 5: raise ValueError("risk_per_trade_pct must be between 0.1 and 5.")
     @property
     def strategy_id(self) -> str:
         payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
     def to_dict(self) -> dict:
-        return {"name": self.name, "long_conditions": [asdict(x) for x in self.long_conditions], "short_conditions": [asdict(x) for x in self.short_conditions], "stop_atr": self.stop_atr, "reward_risk": self.reward_risk, "max_holding_bars": self.max_holding_bars}
+        return {"name": self.name, "long_conditions": [asdict(x) for x in self.long_conditions], "short_conditions": [asdict(x) for x in self.short_conditions], "stop_atr": self.stop_atr, "reward_risk": self.reward_risk, "max_holding_bars": self.max_holding_bars, "risk_per_trade_pct": self.risk_per_trade_pct}
 def strategy_from_dict(payload: dict) -> Strategy:
     """Load a user-authored strategy JSON using the same strict schema as the engine."""
     if not isinstance(payload, dict):
@@ -50,6 +52,7 @@ def strategy_from_dict(payload: dict) -> Strategy:
         stop_atr=float(payload.get("stop_atr", 1.8)),
         reward_risk=float(payload.get("reward_risk", 2.0)),
         max_holding_bars=int(payload.get("max_holding_bars", 48)),
+        risk_per_trade_pct=float(payload.get("risk_per_trade_pct", 1.0)),
     )
 
 
