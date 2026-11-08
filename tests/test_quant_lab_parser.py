@@ -35,9 +35,9 @@ class NaturalLanguageParserTests(unittest.TestCase):
         self.assertEqual(result["strategy"]["long_conditions"][0]["feature"], "rsi_14")
         self.assertIn("volume_ratio", [x["feature"] for x in result["strategy"]["long_conditions"]])
 
-    def test_unsupported_cross_is_reported(self):
-        result = interpret_strategy("LONG: cruce EMA 20 con EMA 50")
-        self.assertTrue(any("cruces" in warning.lower() for warning in result["warnings"]))
+    def test_unsupported_cross_is_rejected_explicitly(self):
+        with self.assertRaisesRegex(ValueError, "cruces de indicadores"):
+            interpret_strategy("LONG: cruce EMA 20 con EMA 50")
 
     def test_ambiguous_directions_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "etiquetas explícitas"):
