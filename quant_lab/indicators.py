@@ -58,8 +58,7 @@ def add_indicators(frame: pd.DataFrame, settings=None) -> pd.DataFrame:
     if ap==14: df["atr_14"]=df[f"atr_{ap}"]
     bp=cfg["bb_period"];mid=close.rolling(bp,min_periods=bp).mean();std=close.rolling(bp,min_periods=bp).std(ddof=0)
     df[f"bb_upper_{bp}"]=mid+cfg["bb_std"]*std;df[f"bb_lower_{bp}"]=mid-cfg["bb_std"]*std
-    if bp==20:
-        df["bb_upper"]=df[f"bb_upper_{bp}"];df["bb_lower"]=df[f"bb_lower_{bp}"]
+    df["bb_upper"]=df[f"bb_upper_{bp}"];df["bb_lower"]=df[f"bb_lower_{bp}"]
     vp=cfg["volume_period"];df[f"volume_sma_{vp}"]=df["volume"].rolling(vp,min_periods=vp).mean()
     df[f"volume_ratio_{vp}"]=df["volume"]/df[f"volume_sma_{vp}"].replace(0,float("nan"))
     df["volume_ratio"]=df[f"volume_ratio_{vp}"]
