@@ -96,6 +96,11 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
         raise ValueError("Escribe una descripción de estrategia antes de interpretarla.")
 
     text = _normalize(description)
+    unsupported = [
+        (r"\b(cruce|cruza|crossover|crosses)\b", "Los cruces de indicadores son eventos; esta versión solo interpreta comparaciones de valores."),
+        (r"\b(vwap|fibonacci|choch|bos|estocastico|stochastic)\b", "Se detectaron indicadores o conceptos que este parser todavía no soporta."),
+    ]
+    unsupported_detected = [message for pattern, message in unsupported if re.search(pattern, text)]
     labels = list(re.finditer(r"\b(long|short)\s*[:\-]", text))
     long_rules: list[Condition] = []
     short_rules: list[Condition] = []
@@ -143,13 +148,7 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
         derived_opposite = True
         warnings.append("LONG se generó invirtiendo las condiciones SHORT; revisa que esa contraparte tenga sentido para tu estrategia.")
 
-    unsupported = [
-        (r"\b(cruce|cruza|crossover|crosses)\b", "Los cruces de indicadores son eventos; esta versión solo interpreta comparaciones de valores."),
-        (r"\b(vwap|fibonacci|choch|bos|estocastico|stochastic)\b", "Se detectaron indicadores o conceptos que este parser todavía no soporta."),
-    ]
-    for pattern, message in unsupported:
-        if re.search(pattern, text):
-            warnings.append(message)
+    warnings.extend(unsupported_detected)
 
     strategy_name = (name or "").strip() or description.strip().splitlines()[0][:60] or "BTC Strategy"
     strategy = Strategy(strategy_name, tuple(long_rules), tuple(short_rules))
