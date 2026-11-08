@@ -10,7 +10,7 @@ from .indicators import add_indicators
 from .ranking import score_candidate, score_training_candidate
 from .strategy import strategy_from_dict
 from .backtest import run_backtest
-from .validation import train_test_report
+from .validation import train_test_report\nfrom .multi_asset import MARKETS, fetch_market_data, run_market_backtest
 
 app = Flask(__name__)
 ALLOWED_ORIGINS = {
@@ -178,3 +178,36 @@ def optimize():
     except Exception:
         app.logger.exception("Optimization failed")
         return jsonify({"ok": False, "error": "Optimization failed. Check API logs and retry."}), 502
+
+
+@app.get("/api/markets")
+def markets():
+    return jsonify({"ok": True, "markets": [{"symbol": k, "name": v} for k, v in MARKETS.items()],
+                    "timeframes": ["5m", "15m", "1h", "4h", "1d"]})
+
+@app.route("/api/multi-backtest", methods=["POST", "OPTIONS"])
+def multi_backtest():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    try:
+        payload = request.get_json(silent=True) or {}
+        symbol = str(payload.get("symbol", "BTC-USD")).upper()
+        timeframe = str(payload.get("timeframe", "1h"))
+        candles = int(payload.get("candles", 1500))
+        config = payload.get("config", {})
+        if not isinstance(config, dict):
+            raise ValueError("config debe ser un objeto JSON.")
+        frame = fetch_market_data(symbol, timeframe, candles)
+        result = run_market_backtest(frame, config)
+        # The complete OHLCV/indicator series is returned for the interactive Plotly chart.
+        return jsonify({"ok": True, "symbol": symbol, "market_name": MARKETS[symbol],
+                        "timeframe": timeframe, "candles_used": len(frame),
+                        "data_start": frame["open_time"].iloc[0].isoformat(),
+                        "data_end": frame["open_time"].iloc[-1].isoformat(),
+                        "result": result,
+                        "disclaimer": "Simulación histórica. No predice resultados ni ejecuta órdenes."})
+    except (ValueError, TypeError, KeyError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        app.logger.exception("Multi-asset backtest failed")
+        return jsonify({"ok": False, "error": str(exc)[:500]}), 502
