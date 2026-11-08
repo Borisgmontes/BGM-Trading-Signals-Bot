@@ -36,8 +36,9 @@
     c.ema_periods.forEach(p=>out.push(['ema_'+p,'EMA '+p]));
     out.push(['rsi_'+c.rsi_period,'RSI '+c.rsi_period],['atr_'+c.atr_period,'ATR '+c.atr_period],
       ['bb_upper_'+c.bb_period,'Bollinger superior '+c.bb_period],['bb_lower_'+c.bb_period,'Bollinger inferior '+c.bb_period],
+      ['bb_upper','Bollinger superior (alias compatible)'],['bb_lower','Bollinger inferior (alias compatible)'],
       ['macd_hist_'+c.macd_fast+'_'+c.macd_slow+'_'+c.macd_signal,'MACD histograma '+c.macd_fast+'/'+c.macd_slow+'/'+c.macd_signal],
-      ['volume_ratio_'+c.volume_period,'Volumen relativo '+c.volume_period]);
+      ['macd_hist','MACD histograma (alias compatible)'],['volume_ratio_'+c.volume_period,'Volumen relativo '+c.volume_period],['volume_ratio','Volumen relativo (alias compatible)']);
     c.cross_pairs.forEach(([a,b])=>out.push(['ema_'+a+'_cross_up_ema_'+b,'Cruce alcista EMA '+a+'/'+b],['ema_'+a+'_cross_down_ema_'+b,'Cruce bajista EMA '+a+'/'+b]));
     out.push(['session_asia_open','Apertura Tokio'],['session_london_open','Apertura Londres'],['session_new_york_open','Apertura Nueva York']);
     return out;
