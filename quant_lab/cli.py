@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse,json
 from pathlib import Path
 from .data import fetch_btc_candles
-from .indicators import add_indicators
+from .api import _market_data\nfrom .strategy import TIMEFRAMES
 from .strategy import generate_candidates, strategy_from_dict
 from .validation import train_test_report,monte_carlo_trade_bootstrap
 from .ranking import score_candidate
@@ -50,7 +50,12 @@ def main():
     timeframe=options["timeframe"]; candles=options["candles"]
     fee_bps=options["fee_bps"]; slippage_bps=options["slippage_bps"]
     initial_equity=options["initial_equity"]
-    data=add_indicators(fetch_btc_candles(timeframe,candles))
+    for strategy in candidates:
+        for rule in (*strategy.long_conditions,*strategy.short_conditions,*strategy.long_exit_conditions,*strategy.short_exit_conditions):
+            rule_tf=rule.timeframe or timeframe
+            if TIMEFRAMES[rule_tf] < TIMEFRAMES[timeframe]:
+                parser.error(f"Rule timeframe {rule_tf} is lower than execution timeframe {timeframe}.")
+    data=_market_data(timeframe,candles,candidates[0] if candidates else None)
     results=[]
     for strategy in candidates:
         try:
