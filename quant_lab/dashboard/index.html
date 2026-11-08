@@ -15,19 +15,20 @@ function buildStrategy(){
  const add=(feature,operator,value,description)=>long.push({feature,operator,value,description});
  const cross=/cruce|cruza|crossover|crosses/.test(s);
  if(cross) unsupported.push('Cruces de medias: el motor actual solo modela comparaciones, no eventos de cruce.');
- const pairs=[...s.matchAll(/ema\s*(10|20|50|100|200)\s*(?:por encima de|mayor que|above|>)\s*ema\s*(10|20|50|100|200)/g)];
- pairs.forEach(m=>add('ema_'+m[1],'>','ema_'+m[2],'EMA '+m[1]+' > EMA '+m[2]));
- const price=[...s.matchAll(/(?:precio|close)\s*(?:esté\s*)?(por encima de|mayor que|above|>)\s*ema\s*(10|20|50|100|200)/g)];
- price.forEach(m=>add('close','>','ema_'+m[2],'Precio > EMA '+m[2]));
- const rsi=[...s.matchAll(/rsi(?:\s*14)?\s*(?:sea\s*)?(menor que|por debajo de|below|<|mayor que|por encima de|above|>)\s*(\d+(?:\.\d+)?)/g)];
+ const pairs=[...s.matchAll(/ema\s*(10|20|50|100|200)\s*(por encima de|mayor que|above|>|por debajo de|menor que|below|<)\s*ema\s*(10|20|50|100|200)/g)];
+ pairs.forEach(m=>{const op=/por debajo|menor que|below|</.test(m[2])?'<':'>';add('ema_'+m[1],op,'ema_'+m[3],'EMA '+m[1]+' '+op+' EMA '+m[3])});
+ const price=[...s.matchAll(/(?:precio|close)\s*(?:esté\s*|esta\s*|está\s*)?(por encima de|mayor que|above|>|por debajo de|menor que|below|<)\s*ema\s*(10|20|50|100|200)/g)];
+ price.forEach(m=>{const op=/por debajo|menor que|below|</.test(m[1])?'<':'>';add('close',op,'ema_'+m[2],'Precio '+op+' EMA '+m[2])});
+ const rsi=[...s.matchAll(/rsi(?:\s*14)?\s*(?:sea\s*)?(menor que|menor de|menor a|por debajo de|below|<|mayor que|mayor de|mayor a|por encima de|above|>)\s*(\d+(?:\.\d+)?)/g)];
  rsi.forEach(m=>{const op=/menor|debajo|below|</.test(m[1])?'<':'>';add('rsi_14',op,Number(m[2]),'RSI '+op+' '+m[2])});
  const vol=[...s.matchAll(/(?:volumen relativo|volume ratio)\s*(?:mayor que|por encima de|>|greater than)\s*(\d+(?:\.\d+)?)/g)];
  vol.forEach(m=>add('volume_ratio','>',Number(m[1]),'Volume ratio > '+m[1]));
  if(/macd(?:\s*hist(?:ogram)?)?\s*(?:positivo|mayor que cero|above zero|>\s*0)/.test(s)) add('macd_hist','>',0,'MACD histogram > 0');
+ if(/macd(?:\s*hist(?:ogram)?)?\s*(?:negativo|menor que cero|below zero|<\s*0)/.test(s)) add('macd_hist','<',0,'MACD histogram < 0');
  const hasLong=/comprar|largo|long|entrar en largo|buy/.test(s),hasShort=/vender|corto|short|entrar en corto|sell/.test(s);
  if(!long.length) unsupported.push('No se reconocieron reglas compatibles. Usa comparaciones EMA, precio/EMA, RSI o volumen relativo.');
  if(!hasLong&&!hasShort) unsupported.push('Indica si opera LONG, SHORT o ambos.');
- if(hasShort&&!hasLong) unsupported.push('Las reglas SHORT explícitas aún requieren definición direccional completa.');
+ if(hasShort) unsupported.push('Esta versión interpreta reglas LONG y genera su contraparte SHORT invertida. Las reglas SHORT independientes todavía no están soportadas.');
  if(cross){} 
  const stop=Number(document.getElementById('stopAtr').value),rr=Number(document.getElementById('rr').value),holding=Number(document.getElementById('holding').value),risk=Number(document.getElementById('riskPct').value);
  if(!(stop>=.5&&stop<=5&&rr>=.5&&rr<=6&&Number.isInteger(holding)&&holding>=1&&holding<=1000&&risk>=.1&&risk<=5)) unsupported.push('Parámetros fuera de rango: Stop ATR 0.5–5, objetivo 0.5–6R, velas 1–1000 y riesgo 0.1–5%.');
