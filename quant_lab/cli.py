@@ -10,19 +10,21 @@ from .ranking import score_candidate
 
 def main():
     parser=argparse.ArgumentParser(description="BGM Quant Lab BTC research MVP")
-    parser.add_argument("--timeframe",default="5m",choices=["1m","5m","15m","1h","4h","1d"])
+    parser.add_argument("--timeframe",default=None,choices=["1m","5m","15m","1h","4h","1d"])
     parser.add_argument("--candles",type=int,default=5000)
     parser.add_argument("--candidates",type=int,default=100)
     parser.add_argument("--seed",type=int,default=7)
     parser.add_argument("--strategy-json",help="Run one user strategy exported by the dashboard")
     parser.add_argument("--output",default="quant_lab/results")
     args=parser.parse_args()
-    data=add_indicators(fetch_btc_candles(args.timeframe,args.candles))
+    payload=None
     if args.strategy_json:
         payload=json.loads(Path(args.strategy_json).read_text(encoding="utf-8"))
         candidates=[strategy_from_dict(payload.get("strategy", payload))]
     else:
         candidates=generate_candidates(args.candidates,args.seed)
+    timeframe=args.timeframe or (payload.get("timeframe","5m") if isinstance(payload,dict) else "5m")
+    data=add_indicators(fetch_btc_candles(timeframe,args.candles))
     results=[]
     for strategy in candidates:
         try:
@@ -38,7 +40,7 @@ def main():
     results.sort(key=lambda x:x.get("quality",{}).get("research_score",0),reverse=True)
     output=Path(args.output); output.mkdir(parents=True,exist_ok=True)
     target=output/"btc_candidates.json"
-    target.write_text(json.dumps({"market":"BTCUSDT","timeframe":args.timeframe,
+    target.write_text(json.dumps({"market":"BTCUSDT","timeframe":timeframe,
         "candles":len(data),"candidates":results},indent=2,allow_nan=False),encoding="utf-8")
     print(f"Processed {len(candidates)} candidates. Report: {target}")
     print("Research only: no orders are sent and profitability is not guaranteed.")
