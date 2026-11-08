@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib, json, random, math, re
 
 BASE_FEATURES = {
-    "close", "volume_ratio", "macd_hist",
+    "close", "volume_ratio", "macd_hist", "bb_upper", "bb_lower",
     "session_asia_open", "session_london_open", "session_new_york_open",
 }
 TIMEFRAMES = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}
@@ -12,10 +12,10 @@ TIMEFRAMES = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}
 def supported_feature(feature: str) -> bool:
     if feature in BASE_FEATURES: return True
     patterns = (
-        r"ema_\\d+", r"rsi_\\d+", r"atr_\\d+",
-        r"bb_(?:upper|lower)_\\d+", r"volume_ratio_\\d+",
-        r"macd_hist_\\d+_\\d+_\\d+",
-        r"ema_\\d+_cross_(?:up|down)_ema_\\d+",
+        r"ema_\d+", r"rsi_\d+", r"atr_\d+",
+        r"bb_(?:upper|lower)_\d+", r"volume_ratio_\d+",
+        r"macd_hist_\d+_\d+_\d+",
+        r"ema_\d+_cross_(?:up|down)_ema_\d+",
     )
     return any(re.fullmatch(pattern, feature) for pattern in patterns)
 
