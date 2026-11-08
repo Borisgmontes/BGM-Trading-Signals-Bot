@@ -50,8 +50,8 @@ function buildStrategy(){
 document.getElementById('buildStrategy').addEventListener('click',buildStrategy);
 downloadStrategy.addEventListener('click',()=>{if(!builtStrategy)return;syncStrategyParams();const blob=new Blob([JSON.stringify(builtStrategy,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='bgm_quant_lab_strategy.json';a.click();URL.revokeObjectURL(url)});
 
-function syncStrategyParams(){if(!builtStrategy)return;builtStrategy.strategy.stop_atr=Number(document.getElementById('stopAtr').value);builtStrategy.strategy.reward_risk=Number(document.getElementById('rr').value);builtStrategy.strategy.max_holding_bars=Number(document.getElementById('holding').value);builtStrategy.strategy.risk_per_trade_pct=Number(document.getElementById('riskPct').value)}
-strategyText.addEventListener('input',()=>{builtStrategy=null;downloadStrategy.disabled=true;runBtn.disabled=true;optBtn.disabled=true;parseState.textContent='Cambios sin interpretar';parseState.className='tag gold'});
+function syncStrategyParams(){if(!builtStrategy)return;builtStrategy.strategy.stop_atr=Number(document.getElementById('stopAtr').value);builtStrategy.strategy.reward_risk=Number(document.getElementById('rr').value);builtStrategy.strategy.max_holding_bars=Number(document.getElementById('holding').value);builtStrategy.strategy.risk_per_trade_pct=Number(document.getElementById('riskPct').value);builtStrategy.timeframe=document.getElementById('timeframe').value;builtStrategy.config=strategyConfig()}
+strategyText.addEventListener('input',()=>{builtStrategy=null;downloadStrategy.disabled=true;saveBtn.disabled=true;runBtn.disabled=true;optBtn.disabled=true;parseState.textContent='Cambios sin interpretar';parseState.className='tag gold'});
 const saveBtn=document.getElementById('saveStrategy'),savedStrategies=document.getElementById('savedStrategies'),savedCount=document.getElementById('savedCount');
 const LIBRARY_KEY='bgmQuantLab.savedStrategies.v1';
 function readLibrary(){try{const v=JSON.parse(localStorage.getItem(LIBRARY_KEY)||'[]');return Array.isArray(v)?v:[]}catch(_){return[]}}
