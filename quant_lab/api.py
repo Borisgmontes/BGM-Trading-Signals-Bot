@@ -112,13 +112,12 @@ def _market_data(timeframe, candles, strategy=None):
         available = source[["open_time", *features]].copy()
         if tf != timeframe:
             available["available_at"] = available["open_time"] + pd.to_timedelta(TIMEFRAMES[tf], unit="s")
-            available = available.drop(columns=["open_time"]).rename(columns={"available_at":"available_at"})
+            available = available.drop(columns=["open_time"])
+            available.rename(columns={column:f"tf_{tf}__{column}" for column in features},inplace=True)
             base = pd.merge_asof(base.sort_values("open_time"),
                 available.sort_values("available_at"),
                 left_on="open_time",right_on="available_at",direction="backward")
             base = base.drop(columns=["available_at"])
-            for column in features:
-                base.rename(columns={column:f"tf_{tf}__{column}"},inplace=True)
         else:
             for column in features:
                 base[f"tf_{tf}__{column}"] = base[column]
