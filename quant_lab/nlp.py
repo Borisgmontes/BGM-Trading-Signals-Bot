@@ -59,6 +59,8 @@ def _parse_conditions(section: str) -> list[Condition]:
          lambda m: ("close", m.group(1), "ema_" + m.group(2))),
         (rf"\brsi(?:\s*14)?\s*(?:(?:sea|esta|este|se encuentre)\s*)?({_OPERATOR})\s*(\d{{1,3}}(?:\.\d+)?)\b",
          lambda m: ("rsi_14", m.group(1), float(m.group(2)))),
+        (rf"\batr(?:\s*14)?\s*(?:(?:sea|esta|este|se encuentre)\s*)?({_OPERATOR})\s*(\d+(?:\.\d+)?)\b",
+         lambda m: ("atr_14", m.group(1), float(m.group(2)))),
         (rf"\b(?:volumen(?:\s+relativo)?|volume\s+ratio)\s*(?:(?:sea|esta|este)\s*)?({_OPERATOR})\s*(\d+(?:\.\d+)?)\b",
          lambda m: ("volume_ratio", m.group(1), float(m.group(2)))),
         (rf"\b({_FEATURE})\s*(>=|<=|>|<)\s*({_FEATURE}|-?\d+(?:\.\d+)?)\b",
@@ -98,7 +100,10 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
     text = _normalize(description)
     unsupported = [
         (r"\b(cruce|cruza|crossover|crosses)\b", "Los cruces de indicadores son eventos; esta versión solo interpreta comparaciones de valores."),
-        (r"\b(vwap|fibonacci|choch|bos|estocastico|stochastic)\b", "Se detectaron indicadores o conceptos que este parser todavía no soporta."),
+        (r"\b(vwap|fibonacci|choch|bos|estocastico|stochastic|adx|supertrend|ichimoku|obv|cci|mfi)\b", "Se detectaron indicadores o conceptos que este parser todavía no soporta."),
+        (r"\bema\s*(?!(?:10|20|50|100|200)\b)\d+\b", "Periodo EMA no soportado; utiliza EMA 10, 20, 50, 100 o 200."),
+        (r"\brsi\s*(?!14\b)\d+\b", "Periodo RSI no soportado; esta versión utiliza RSI 14."),
+        (r"\batr\s*(?!14\b)\d+\b", "Periodo ATR no soportado; esta versión utiliza ATR 14."),
     ]
     unsupported_detected = [message for pattern, message in unsupported if re.search(pattern, text)]
     labels = list(re.finditer(r"\b(long|short)\s*[:\-]", text))
