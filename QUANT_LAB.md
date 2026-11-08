@@ -11,14 +11,14 @@ Estado: laboratorio de investigación en la rama `feature/bgm-quant-lab-btc`. No
 5. Guarda la estrategia si quieres reutilizarla, exporta el JSON o ejecuta el backtest.
 6. Compara el resultado OUT-OF-SAMPLE con las pruebas anteriores. El historial de estrategias y comparaciones queda en el almacenamiento local del navegador.
 
-El parser de lenguaje natural sigue siendo deliberadamente limitado y solo reconoce las reglas indicadas por su diagnóstico. El constructor visual añade reglas de entrada y salida LONG/SHORT con comparaciones numéricas o entre indicadores, eventos de cruce EMA 10/20, 20/50 y 50/200, y aperturas de Tokio, Londres y Nueva York. Los cruces se activan únicamente en la vela donde cambia la relación entre medias. Las aperturas se calculan en la zona horaria local de cada mercado (con DST) y requieren una vela cuya marca de tiempo coincida con la apertura; en temporalidades mayores puede no existir una vela alineada. Los indicadores usan estos parámetros fijos en esta versión: EMA 10/20/50/100/200; RSI 14; ATR 14; Bollinger 20 con 2 desviaciones; MACD 12/26/9; volumen relativo sobre SMA 20. El usuario selecciona la variante EMA desde el catálogo; los periodos de RSI/ATR/Bollinger/MACD todavía no son editables. VWAP, Fibonacci, CHoCH/BOS y patrones no se deben considerar implementados.
+El parser de lenguaje natural sigue siendo deliberadamente limitado y solo reconoce las reglas indicadas por su diagnóstico. El constructor visual añade reglas de entrada y salida LONG/SHORT con comparaciones numéricas o entre indicadores, eventos de cruce EMA configurables y aperturas de Tokio, Londres y Nueva York. El usuario puede configurar EMA (lista de períodos y pares de cruces), RSI, ATR, Bollinger (período y desviación), MACD (rápido/lento/señal) y media de volumen. Cada condición tiene selector de temporalidad. El timeframe principal es la temporalidad de ejecución; las condiciones pueden usar esa temporalidad o una superior (por ejemplo, tendencia H1 y entrada M5). No se permiten reglas de una temporalidad inferior a la de ejecución, porque requerirían una simulación intrabar no implementada. Los indicadores de una vela superior se incorporan solo a partir de su hora de cierre, nunca desde su apertura, para evitar look-ahead. Los cruces se activan únicamente en la vela donde cambia la relación entre medias. Las aperturas se calculan en la zona horaria local de cada mercado (con DST) y requieren una vela alineada con la hora de apertura. VWAP, Fibonacci, CHoCH/BOS y patrones no se deben considerar implementados.
 
 ## Datos y motor
 
 - El dashboard llama a `https://bgm-quant-lab-api.onrender.com`. El constructor visual está en `quant_lab/dashboard/builder-v2.js` y la biblioteca se conserva en `localStorage` del navegador (no es una biblioteca compartida entre dispositivos).
 - `GET /health`: estado del API.
 - `POST /api/interpret`: convierte una descripción compatible en el esquema de `quant_lab.strategy`.
-- `POST /api/backtest`: descarga velas cerradas de BTCUSDT desde Binance.US, calcula indicadores y devuelve muestra completa, TRAIN y OUT-OF-SAMPLE cronológico.
+- `POST /api/backtest`: descarga velas cerradas de BTCUSDT desde Binance.US para el timeframe de ejecución y los timeframes superiores requeridos, calcula indicadores configurados, alinea velas superiores por hora de cierre y devuelve muestra completa, TRAIN y OUT-OF-SAMPLE cronológico.
 - La entrada se simula en la apertura de la vela siguiente a la señal. Las salidas por condición se evalúan al cierre de cada vela; el Stop y el Target tienen prioridad y, si ambos se tocan en una misma vela, se asume primero el Stop.
 - El sizing es spot sin apalancamiento, limita el nocional al 100% del capital y busca no superar el riesgo configurado en el Stop. Las operaciones SHORT son simulaciones direccionales; no modelan margen, funding, borrow, liquidación, gaps, profundidad ni latencia.
 - Comisiones y slippage se expresan en bps por lado y se descuentan como coste de ida y vuelta. Los resultados dependen de la disponibilidad y calidad del proveedor gratuito.
@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python -m quant_lab.cli --strategy-json bgm_quant_lab_strategy.json
 ```
 
-El CLI usa los parámetros guardados en el JSON. Los argumentos de línea de comandos los pueden sobrescribir:
+El CLI usa los parámetros guardados en el JSON, incluidos los períodos personalizados y las temporalidades de cada condición. Descarga y alinea las temporalidades superiores con la misma regla causal que la API. Los argumentos de línea de comandos los pueden sobrescribir:
 
 ```bash
 python -m quant_lab.cli --strategy-json bgm_quant_lab_strategy.json --timeframe 1h --candles 5000 --fee-bps 5 --slippage-bps 2 --initial-equity 10000
