@@ -112,7 +112,8 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
         if "short" in sections:
             short_rules = _parse_conditions(sections["short"])
         if not long_rules and not short_rules:
-            raise ValueError("No se reconocieron reglas compatibles en los bloques LONG/SHORT.")
+            detail = " ".join(unsupported_detected)
+            raise ValueError(detail or "No se reconocieron reglas compatibles en los bloques LONG/SHORT.")
         if "long" in sections and not long_rules:
             raise ValueError("El bloque LONG no contiene reglas compatibles.")
         if "short" in sections and not short_rules:
@@ -126,7 +127,8 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
             raise ValueError("Indica si la estrategia opera LONG o SHORT.")
         rules = _parse_conditions(text)
         if not rules:
-            raise ValueError("No se reconocieron reglas. Usa comparaciones de precio/EMA, EMA/EMA, RSI, volumen relativo, MACD o bandas Bollinger.")
+            detail = " ".join(unsupported_detected)
+            raise ValueError(detail or "No se reconocieron reglas. Usa comparaciones de precio/EMA, EMA/EMA, RSI, volumen relativo, MACD o bandas Bollinger.")
         if has_short:
             short_rules = rules
         else:
