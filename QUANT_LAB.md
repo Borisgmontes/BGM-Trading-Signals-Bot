@@ -1,57 +1,57 @@
-# BGM Quant Lab — BTC research MVP
+# BGM Quant Lab — BTC Strategy Research
 
-Status: experimental research branch only. This module does not connect to a broker, place orders, or change BTC Radar runtime.
+Estado: laboratorio de investigación en la rama `feature/bgm-quant-lab-btc`. No conecta con brokers, no envía órdenes y no modifica BTC Radar.
 
-## First architecture slice
+## Flujo recomendado desde el dashboard
 
-- quant_lab/data.py: paginated BTCUSDT OHLCV download from Binance.US; latest candle is excluded only for current-history requests.
-- quant_lab/indicators.py: causal EMA, RSI, ATR, Bollinger, volume ratio and MACD histogram.
-- quant_lab/strategy.py: constrained, reproducible strategy definitions and candidate generation.
-- quant_lab/backtest.py: signal on completed candle, entry at next bar open, ATR stop, R-multiple target, fee/slippage costs, and conservative stop-first handling when TP and SL touch in one candle.
-- quant_lab/validation.py: train/out-of-sample report, fixed-strategy walk-forward windows and bootstrap resampling of observed trade returns.
-- quant_lab/ranking.py: transparent rule-based quality gates and a 0-100 research score. This is not a predictive AI model.
-- quant_lab/cli.py: research workflow and JSON report output; supports `--fee-bps`, `--slippage-bps` and `--initial-equity` so local reports use the same assumptions as the dashboard/API.
+1. Abre el constructor BTC y describe las reglas usando las condiciones compatibles.
+2. Ajusta temporalidad, velas, capital, comisión, slippage, Stop ATR, objetivo R, riesgo y máximo de velas.
+3. Pulsa **Guardar configuración**. Si modificas un campo después, vuelve a guardarlo.
+4. Pulsa **Interpretar reglas** y revisa las condiciones LONG/SHORT y los avisos. Si solo defines una dirección, la opuesta se genera invirtiendo operadores; revisa esa hipótesis.
+5. Guarda la estrategia si quieres reutilizarla, exporta el JSON o ejecuta el backtest.
+6. Compara el resultado OUT-OF-SAMPLE con las pruebas anteriores. El historial de estrategias y comparaciones queda en el almacenamiento local del navegador.
 
-## HTTP API and dashboard
+El parser no es un modelo generativo: solo reconoce comparaciones explícitas de precio/EMA, EMA/EMA, RSI, volumen relativo, MACD y bandas Bollinger. Los cruces de indicadores, VWAP, Fibonacci, CHoCH/BOS y patrones no están implementados en este constructor. No se debe asumir que una frase no reconocida se ha aplicado.
 
-The dashboard calls the separate Flask API service at `https://bgm-quant-lab-api.onrender.com`.
+## Datos y motor
 
-- `GET /health`: service readiness.
-- `POST /api/backtest`: runs full-sample plus train/out-of-sample validation on downloaded, closed BTCUSDT candles.
-- `POST /api/optimize`: explores up to 25 Stop-ATR / reward-to-risk combinations, ranks them using TRAIN data only, then evaluates the selected combination once on held-out OUT-OF-SAMPLE data.
-- Both endpoints accept the dashboard JSON strategy, timeframe, candle count, fee and slippage assumptions, plus starting capital. The API is research-only and sends no orders.
-- The free Render API may sleep between requests; first request can be slow. Public Binance.US market data is used; network/provider availability can affect requests.
+- El dashboard llama a `https://bgm-quant-lab-api.onrender.com`.
+- `GET /health`: estado del API.
+- `POST /api/interpret`: convierte una descripción compatible en el esquema de `quant_lab.strategy`.
+- `POST /api/backtest`: descarga velas cerradas de BTCUSDT desde Binance.US, calcula indicadores y devuelve muestra completa, TRAIN y OUT-OF-SAMPLE cronológico.
+- La entrada se simula en la apertura de la vela siguiente a la señal. Si Stop y Target se tocan en una misma vela, se asume primero el Stop.
+- El sizing es spot sin apalancamiento, limita el nocional al 100% del capital y busca no superar el riesgo configurado en el Stop. Las operaciones SHORT son simulaciones direccionales; no modelan margen, funding, borrow, liquidación, gaps, profundidad ni latencia.
+- Comisiones y slippage se expresan en bps por lado y se descuentan como coste de ida y vuelta. Los resultados dependen de la disponibilidad y calidad del proveedor gratuito.
+- El dashboard muestra métricas calculadas por el motor, no cifras de muestra. Si la API no responde, no presenta resultados como si fueran reales.
 
-Run the API locally:
+## JSON y CLI reproducible
 
-    pip install -r requirements.txt
-    gunicorn --bind 0.0.0.0:8000 quant_lab.api:app
+El botón **Exportar JSON** descarga un objeto con `strategy` compatible con `strategy_from_dict`, además de temporalidad, velas, capital y costes. Desde la raíz del repositorio:
 
-Run one exported dashboard strategy locally:
+```bash
+pip install -r requirements.txt
+python -m quant_lab.cli --strategy-json bgm_quant_lab_strategy.json
+```
 
-    python -m quant_lab.cli --timeframe 5m --candles 5000 --strategy-json strategy.json --fee-bps 5 --slippage-bps 2 --initial-equity 10000
+El CLI usa los parámetros guardados en el JSON. Los argumentos de línea de comandos los pueden sobrescribir:
 
-## Run locally
+```bash
+python -m quant_lab.cli --strategy-json bgm_quant_lab_strategy.json --timeframe 1h --candles 5000 --fee-bps 5 --slippage-bps 2 --initial-equity 10000
+```
 
-    pip install -r requirements.txt
-    python -m quant_lab.cli --timeframe 5m --candles 5000 --candidates 100 --fee-bps 5 --slippage-bps 2 --initial-equity 10000
-    python -m unittest tests.test_quant_lab -v
+El reporte se escribe en `quant_lab/results/btc_candidates.json`. También se puede ejecutar la batería local con:
 
-## Safeguards and current limitations
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q quant_lab
+```
 
-1. Signals are evaluated on completed candles; simulated entries occur at the next candle open.
-2. Fees and slippage are deducted on entry and exit. The simulator uses unleveraged spot-style sizing, caps notional at 100% of equity, and scales each position to a maximum configured risk percentage at the stop. Actual risk can be lower when the 100% notional cap binds. Short trades are directional simulations only: margin, funding, borrow fees, liquidation, gaps through stops, order-book depth and latency are not modelled.
-3. If stop and target are both touched in one OHLC candle, the simulator assumes the adverse stop happened first.
-4. Candidate generation uses only constrained, seeded rules. It is a search baseline, not a trained AI model.
-5. Out-of-sample data is not used to generate candidate rules. The rule-based score requires at least 30 out-of-sample trades, positive net return, profit factor >= 1.10 and drawdown <= 25% before a candidate is eligible for paper testing.
-6. Bootstrap resamples observed trades; it does not simulate new market regimes or prove future profitability.
-7. Current walk-forward reports fixed-strategy results over consecutive windows; it does not yet re-optimize on each rolling training window.
-8. The score is a preliminary filter, not approval to trade. Parameter stability, exchange costs, funding, latency and paper trading remain mandatory before any MT5 adapter is enabled.
+## Interpretación de métricas y limitaciones
 
-## Next stages
-
-- True rolling walk-forward optimizer with separate training and test windows.
-- Parameter-sensitivity analysis, strategy-family deduplication and multi-objective ranking. The first dashboard grid search uses TRAIN-only selection and a single OOS evaluation to reduce leakage.
-- Persist market data, experiments, strategies and metrics in SQLite/PostgreSQL.
-- Read-only MT5 symbol/specification adapter, then a separate demo-only execution bridge after validation.
-- Web dashboard for experiment control and strategy comparison.
+- Las métricas de muestra completa sirven para inspección; no sustituyen la validación fuera de muestra.
+- TRAIN ocupa el primer 70% de velas; OUT-OF-SAMPLE usa el 30% final con velas previas solo para calentar indicadores. No se deben optimizar parámetros mirando repetidamente el OOS.
+- El profit factor se calcula con retornos netos de cada operación; si no hay pérdidas, puede aparecer como `null` (sin denominador).
+- El drawdown se calcula sobre la curva de capital al cierre de cada operación, no sobre cada fluctuación intrabar.
+- El simulador no incorpora impuestos, spread variable, funding, liquidación, latencia, market impact ni fallos de ejecución.
+- El score OOS es un filtro transparente de investigación, no una predicción ni una aprobación para operar.
+- La página multi-activo anterior se conserva en `multi-asset.html`; usa un motor distinto y datos de Yahoo Finance. Para estrategias BTC exportables al CLI se debe usar el constructor principal de esta página.
