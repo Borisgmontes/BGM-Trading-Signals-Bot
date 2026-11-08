@@ -39,6 +39,10 @@ class NaturalLanguageParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cruces de indicadores"):
             interpret_strategy("LONG: cruce EMA 20 con EMA 50")
 
+    def test_supported_rule_does_not_hide_unsupported_clause(self):
+        with self.assertRaisesRegex(ValueError, "reglas no soportadas"):
+            interpret_strategy("LONG: close > ema_200 y cruce EMA 20 con EMA 50")
+
     def test_ambiguous_directions_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "etiquetas explícitas"):
             interpret_strategy("Comprar cuando close > ema_200 y vender cuando close < ema_200")
