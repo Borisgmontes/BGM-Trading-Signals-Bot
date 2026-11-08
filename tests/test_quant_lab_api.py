@@ -24,6 +24,18 @@ class QuantLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["status"], "ok")
 
+    def test_interpret_endpoint_returns_strategy_schema(self):
+        response = self.client.post("/api/interpret", json={
+            "name": "BTC API parser",
+            "description": "LONG: precio por encima de EMA 200 y RSI 14 menor que 65"
+        })
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertTrue(response.json["ok"])
+        self.assertIn("long_conditions", response.json["strategy"])
+        self.assertIn("short_conditions", response.json["strategy"])
+        from quant_lab.strategy import strategy_from_dict
+        self.assertEqual(strategy_from_dict(response.json["strategy"]).name, "BTC API parser")
+
     @patch("quant_lab.api._market_data")
     def test_backtest_endpoint_returns_real_engine_metrics(self, market_data):
         from quant_lab.indicators import add_indicators
