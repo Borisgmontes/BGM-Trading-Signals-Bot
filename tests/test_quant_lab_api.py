@@ -15,7 +15,7 @@ class QuantLabApiTests(unittest.TestCase):
             "short_conditions": [{"feature": "close", "operator": "<", "value": "ema_200"}],
             "stop_atr": 1.8, "reward_risk": 2.0, "max_holding_bars": 24
         }
-        self.payload = {"strategy": payload, "timeframe": "5m", "candles": 700}
+        self.payload = {"strategy": payload, "timeframe": "5m", "candles": 700, "initial_equity": 2500}
 
     def test_root_and_health_endpoints(self):
         root = self.client.get("/")
@@ -33,6 +33,9 @@ class QuantLabApiTests(unittest.TestCase):
         self.assertTrue(response.json["ok"])
         self.assertIn("out_of_sample", response.json)
         self.assertIn("profit_factor", response.json["out_of_sample"])
+        self.assertEqual(response.json["full_sample"]["equity_curve"][0], 2500)
+        self.assertEqual(response.json["train"]["equity_curve"][0], 2500)
+        self.assertEqual(response.json["out_of_sample"]["equity_curve"][0], 2500)
 
     @patch("quant_lab.api._market_data")
     def test_optimizer_tests_parameter_grid(self, market_data):
