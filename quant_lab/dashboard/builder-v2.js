@@ -61,7 +61,7 @@
       '<div class="btnrow"><button class="btn secondary" id="refreshCatalog" type="button">Actualizar catálogo</button></div>'+
       '<div class="sectionlabel">ENTRADAS</div><div id="entryRules" class="grid" style="grid-template-columns:1fr 1fr;gap:10px"></div>'+
       '<div class="sectionlabel">SALIDAS POR CONDICIÓN</div><div id="exitRules" class="grid" style="grid-template-columns:1fr 1fr;gap:10px"></div>'+
-      '<div class="btnrow"><button class="btn secondary" id="importNatural" type="button">Combinar reglas del texto</button><button class="btn secondary" id="resetVisual" type="button">Limpiar reglas visuales</button><button class="btn" id="saveVisual" type="button">Guardar en biblioteca</button><button class="btn" id="runVisual" type="button">Ejecutar backtest</button></div>'+
+      '<div class="btnrow"><button class="btn secondary" id="importNatural" type="button">Combinar reglas del texto</button><button class="btn secondary" id="resetVisual" type="button">Limpiar reglas visuales</button><button class="btn" id="saveVisual" type="button">Guardar en biblioteca</button><button class="btn secondary" id="exportVisual" type="button">Exportar JSON</button><button class="btn" id="runVisual" type="button">Ejecutar backtest</button></div>'+
       '<div class="statusline" id="visualStatus">Configura indicadores, añade reglas y guarda con un nombre.</div><div id="visualResult" class="rules" hidden></div>'+
       '<div class="sectionlabel">BIBLIOTECA DE ESTRATEGIAS</div><div id="visualLibrary" class="library"></div>';
     document.querySelector('.right').append(host);
@@ -72,7 +72,7 @@
     ['emaPeriods','crossPairs','rsiPeriod','atrPeriod','bbPeriod','bbStd','macdFast','macdSlow','macdSignal','volumePeriod'].forEach(id=>$(id).addEventListener('change',()=>{try{settings();renderRules();status('Parámetros actualizados. Las reglas con períodos retirados deben revisarse.')}catch(e){status(e.message,true)}}));
     $('importNatural').addEventListener('click',importNatural);
     $('resetVisual').addEventListener('click',()=>{Object.keys(state.rules).forEach(k=>state.rules[k]=[]);renderRules();status('Reglas visuales eliminadas.')});
-    $('saveVisual').addEventListener('click',saveStrategy);$('runVisual').addEventListener('click',runBacktest);
+    $('saveVisual').addEventListener('click',saveStrategy);$('exportVisual').addEventListener('click',exportStrategy);$('runVisual').addEventListener('click',runBacktest);
     renderRules();renderLibrary();
   }
   function timeframeOptions(selected){
@@ -116,10 +116,18 @@
   }
   function config(){return {market:'BTCUSDT',timeframe:$('timeframe').value,candles:Number($('candles').value),initial_equity:Number($('initialEquity').value),
     fee_bps:Number($('feeBps').value),slippage_bps:Number($('slippageBps').value),strategy:currentStrategy()}}
+  function exportStrategy(){
+    try{const p=config(),blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=(p.strategy.name||'bgm-strategy').toLowerCase().replace(/[^a-z0-9]+/g,'-')+'.json';a.click();URL.revokeObjectURL(url);
+      status('JSON exportado con períodos y temporalidades de cada regla.');
+    }catch(e){status(e.message,true)}
+  }
   function saveStrategy(){
     try{const p=config(),items=load(),id=state.active||'visual-'+Date.now(),old=items.find(x=>x.id===id);
+      const savedConfig={timeframe:p.timeframe,candles:p.candles,initial_equity:p.initial_equity,fee_bps:p.fee_bps,slippage_bps:p.slippage_bps};
+      const unchanged=old&&JSON.stringify(old.strategy)===JSON.stringify(p.strategy)&&JSON.stringify(old.config)===JSON.stringify(savedConfig);
       const item={id,name:p.strategy.name,saved_at:old?.saved_at||new Date().toISOString(),strategy:p.strategy,
-        config:{timeframe:p.timeframe,candles:p.candles,initial_equity:p.initial_equity,fee_bps:p.fee_bps,slippage_bps:p.slippage_bps},last_result:old?.last_result||null};
+        config:savedConfig,last_result:unchanged?old.last_result:null};
       save([item,...items.filter(x=>x.id!==id)]);state.active=id;renderLibrary();status('Estrategia guardada en la biblioteca local.');
     }catch(e){status(e.message,true)}
   }
