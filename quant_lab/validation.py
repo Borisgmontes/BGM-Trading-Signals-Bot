@@ -6,22 +6,24 @@ from .backtest import run_backtest
 from .strategy import Strategy
 
 def train_test_report(df: pd.DataFrame, strategy: Strategy, train_fraction: float=0.70,
-                      fee_bps: float=5.0, slippage_bps: float=2.0) -> dict:
+                      fee_bps: float=5.0, slippage_bps: float=2.0,
+                      initial_equity: float=10000.0) -> dict:
     if not 0.5 <= train_fraction <= 0.9:
         raise ValueError("train_fraction must be between 0.5 and 0.9")
     split = int(len(df)*train_fraction)
     if split < 250 or len(df)-split < 50:
         raise ValueError("Not enough candles for train and out-of-sample partitions.")
-    train = run_backtest(df.iloc[:split].reset_index(drop=True),strategy,fee_bps,slippage_bps)
+    train = run_backtest(df.iloc[:split].reset_index(drop=True),strategy,fee_bps,slippage_bps,initial_equity)
     # 200 preceding candles warm indicators; backtest's first eligible signal is exactly at split.
     warmup = max(0,split-200)
     test_frame = df.iloc[warmup:].reset_index(drop=True)
-    test = run_backtest(test_frame,strategy,fee_bps,slippage_bps)
+    test = run_backtest(test_frame,strategy,fee_bps,slippage_bps,initial_equity)
     return {"train":train.to_dict(),"out_of_sample":test.to_dict(),
             "split_index":split,"out_of_sample_start":str(df.index[split])}
 
 def walk_forward_report(df: pd.DataFrame, strategy: Strategy, windows: int=4,
-                        fee_bps: float=5.0, slippage_bps: float=2.0) -> list[dict]:
+                        fee_bps: float=5.0, slippage_bps: float=2.0,
+                        initial_equity: float=10000.0) -> list[dict]:
     if windows < 2 or len(df) < windows*300:
         raise ValueError("Walk-forward requires at least 300 candles per window.")
     reports = []
@@ -31,7 +33,7 @@ def walk_forward_report(df: pd.DataFrame, strategy: Strategy, windows: int=4,
         segment = df.iloc[start:end].reset_index(drop=True)
         if len(segment) < 250:
             continue
-        result = run_backtest(segment,strategy,fee_bps,slippage_bps)
+        result = run_backtest(segment,strategy,fee_bps,slippage_bps,initial_equity)
         reports.append({"window":n+1,"start":str(df.index[start]),
                         "end":str(df.index[end-1]),"result":result.to_dict()})
     return reports
