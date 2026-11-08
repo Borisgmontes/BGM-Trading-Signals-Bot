@@ -148,7 +148,8 @@ def interpret_strategy(description: str, name: str | None = None) -> dict:
         derived_opposite = True
         warnings.append("LONG se generó invirtiendo las condiciones SHORT; revisa que esa contraparte tenga sentido para tu estrategia.")
 
-    warnings.extend(unsupported_detected)
+    if unsupported_detected:
+        raise ValueError("No se puede interpretar esta estrategia porque contiene reglas no soportadas: " + " ".join(unsupported_detected))
 
     strategy_name = (name or "").strip() or description.strip().splitlines()[0][:60] or "BTC Strategy"
     strategy = Strategy(strategy_name, tuple(long_rules), tuple(short_rules))
