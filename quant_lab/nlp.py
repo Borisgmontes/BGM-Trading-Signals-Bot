@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .strategy import ALLOWED_FEATURES, Condition, Strategy
+from .strategy import supported_feature, Condition, Strategy
 
 _OPERATOR = r"(?:por\s+encima\s+de|mayor\s+que|above|greater\s+than|>=|>|por\s+debajo\s+de|menor\s+que|below|less\s+than|<=|<)"
 _EMA = r"(?:10|20|50|100|200)"
@@ -32,7 +32,7 @@ def _operator(value: str) -> str:
 
 def _value(value: str):
     token = value.strip().lower()
-    if token in ALLOWED_FEATURES:
+    if supported_feature(token):
         return token
     try:
         number = float(token)
