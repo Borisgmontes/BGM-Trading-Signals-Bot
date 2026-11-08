@@ -11,7 +11,7 @@ Estado: laboratorio de investigación en la rama `feature/bgm-quant-lab-btc`. No
 5. Guarda la estrategia si quieres reutilizarla, exporta el JSON o ejecuta el backtest.
 6. Compara el resultado OUT-OF-SAMPLE con las pruebas anteriores. El historial de estrategias y comparaciones queda en el almacenamiento local del navegador.
 
-El parser no es un modelo generativo: solo reconoce comparaciones explícitas de precio/EMA, EMA/EMA, RSI, volumen relativo, MACD y bandas Bollinger. Los cruces de indicadores, VWAP, Fibonacci, CHoCH/BOS y patrones no están implementados en este constructor. No se debe asumir que una frase no reconocida se ha aplicado.
+El parser no es un modelo generativo: solo reconoce comparaciones explícitas de precio/EMA, EMA/EMA, RSI 14, ATR 14, volumen relativo, MACD y bandas Bollinger. Los cruces de indicadores, VWAP, Fibonacci, CHoCH/BOS y patrones no están implementados en este constructor. No se debe asumir que una frase no reconocida se ha aplicado.
 
 ## Datos y motor
 
