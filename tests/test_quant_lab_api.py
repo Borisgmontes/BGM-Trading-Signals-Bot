@@ -42,6 +42,7 @@ class QuantLabApiTests(unittest.TestCase):
         response = self.client.post("/api/optimize", json=payload)
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(response.json["combinations_tested"], 4)
+        self.assertIn("out_of_sample", response.json["selected"])
 
     def test_rejects_oversized_candle_request(self):
         response = self.client.post("/api/backtest", json={**self.payload, "candles": 50000})
