@@ -49,6 +49,12 @@ class QuantLabApiTests(unittest.TestCase):
         self.assertEqual(response.json["train"]["equity_curve"][0], 2500)
         self.assertEqual(response.json["out_of_sample"]["equity_curve"][0], 2500)
 
+    @patch("quant_lab.api._market_data", side_effect=RuntimeError("Binance.US rate limit"))
+    def test_backtest_provider_failure_is_explained(self, market_data):
+        response = self.client.post("/api/backtest", json=self.payload)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("Binance.US rate limit", response.json["error"])
+
     @patch("quant_lab.api._market_data")
     def test_optimizer_tests_parameter_grid(self, market_data):
         from quant_lab.indicators import add_indicators
