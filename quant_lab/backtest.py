@@ -36,8 +36,8 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
                  slippage_bps: float=2.0, initial_equity: float=10000.0) -> BacktestResult:
     if len(df) < 250:
         raise ValueError("At least 250 candles are required for a meaningful BTC test.")
-    if fee_bps < 0 or slippage_bps < 0 or initial_equity <= 0:
-        raise ValueError("Costs must be non-negative and initial equity positive.")
+    if not all(math.isfinite(float(x)) for x in (fee_bps, slippage_bps, initial_equity)) or fee_bps < 0 or slippage_bps < 0 or fee_bps > 100 or slippage_bps > 100 or initial_equity <= 0:
+        raise ValueError("Fees/slippage must be finite and between 0 and 100 bps; initial equity must be positive.")
     required = {"open","high","low","close","atr_14"}
     if not required.issubset(df.columns):
         raise ValueError(f"Data must include indicators: {sorted(required)}")
