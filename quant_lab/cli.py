@@ -40,7 +40,10 @@ def main():
             parser.error(f"Cannot read strategy JSON: {exc}")
         if not isinstance(payload, dict):
             parser.error("Strategy JSON root must be an object.")
-        candidates=[strategy_from_dict(payload.get("strategy", payload))]
+        try:
+            candidates=[strategy_from_dict(payload.get("strategy", payload))]
+        except (ValueError, TypeError, KeyError) as exc:
+            parser.error(f"Invalid strategy JSON: {exc}")
     else:
         candidates=generate_candidates(args.candidates,args.seed)
     options=resolve_options(args,payload)
