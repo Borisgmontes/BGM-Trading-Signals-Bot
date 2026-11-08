@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timezone
+from datetime import timezone\nimport pandas as pd
 import math
 from flask import Flask, jsonify, request
 from .data import fetch_btc_candles
-from .indicators import add_indicators
+from .indicators import add_indicators, normalize_indicator_settings
 from .ranking import score_candidate, score_training_candidate
-from .strategy import strategy_from_dict
+from .strategy import strategy_from_dict, TIMEFRAMES
 from .backtest import run_backtest
 from .validation import train_test_report
 from .multi_asset import MARKETS, fetch_market_data, run_market_backtest
@@ -64,13 +64,65 @@ def _load_request(payload):
     fee = _number(payload.get("fee_bps", 5), "fee_bps", 0, 100)
     slippage = _number(payload.get("slippage_bps", 2), "slippage_bps", 0, 100)
     equity = _number(payload.get("initial_equity", 10000), "initial_equity", 1, 1e9)
+    settings = normalize_indicator_settings(strategy.indicator_settings)
+    strategy = replace(strategy, indicator_settings=settings)
+    for rule in (*strategy.long_conditions, *strategy.short_conditions, *strategy.long_exit_conditions, *strategy.short_exit_conditions):
+        rule_tf = rule.timeframe or timeframe
+        if TIMEFRAMES[rule_tf] < TIMEFRAMES[timeframe]:
+            raise ValueError(f"Rule timeframe {rule_tf} is lower than execution timeframe {timeframe}. Use the execution timeframe or a higher one to avoid look-ahead.")
+        for feature in (rule.feature, rule.value if isinstance(rule.value, str) else None):
+            if not feature: continue
+            if feature.startswith("ema_") and "_cross_" not in feature:
+                period=int(feature.split("_")[1])
+                if period not in settings["ema_periods"]:
+                    raise ValueError(f"EMA {period} is used by a rule but is not included in indicator_settings. Add it to EMA periods.")
+            if "_cross_" in feature:
+                parts=feature.split("_")
+                pair=[int(parts[1]),int(parts[-1])]
+                if pair not in settings["cross_pairs"]:
+                    raise ValueError(f"EMA cross {pair[0]}/{pair[1]} is used by a rule but is not included in cross_pairs.")
+            if feature.startswith(("rsi_","atr_")):
+                expected=settings["rsi_period"] if feature.startswith("rsi_") else settings["atr_period"]
+                if int(feature.split("_")[1])!=expected: raise ValueError(f"Rule feature {feature} does not match configured period {expected}.")
+            if feature.startswith(("bb_upper_","bb_lower_")) and int(feature.rsplit("_",1)[1])!=settings["bb_period"]:
+                raise ValueError(f"Rule feature {feature} does not match configured Bollinger period {settings['bb_period']}.")
     return strategy, timeframe, candles, fee, slippage, equity
 
-def _market_data(timeframe, candles):
-    frame = add_indicators(fetch_btc_candles(timeframe=timeframe, limit=candles))
-    if len(frame) < 500:
-        raise ValueError(f"Only {len(frame)} closed candles available; need at least 500.")
-    return frame
+def _market_data(timeframe, candles, strategy=None):
+    settings = strategy.indicator_settings if strategy else None
+    base = add_indicators(fetch_btc_candles(timeframe=timeframe, limit=candles), settings)
+    if len(base) < 500:
+        raise ValueError(f"Only {len(base)} closed candles available; need at least 500.")
+    # Every explicit timeframe gets a namespaced, causal feature set. Higher-TF
+    # values become visible only after that candle has closed (never at its open).
+    needed = {rule.timeframe for rule in (
+        (*strategy.long_conditions, *strategy.short_conditions,
+         *strategy.long_exit_conditions, *strategy.short_exit_conditions)
+        if strategy else ()) if rule.timeframe}
+    needed.add(timeframe)
+    for tf in sorted(needed, key=lambda value: TIMEFRAMES[value]):
+        if tf == timeframe:
+            source = base
+        else:
+            source = add_indicators(fetch_btc_candles(timeframe=tf, limit=candles), settings)
+        features = [column for column in source.columns if column not in {
+            "open_time","open","high","low","close","volume","close_time",
+            "quote_volume","trades","taker_buy_base","taker_buy_quote","ignore"
+        }]
+        available = source[["open_time", *features]].copy()
+        if tf != timeframe:
+            available["available_at"] = available["open_time"] + pd.to_timedelta(TIMEFRAMES[tf], unit="s")
+            available = available.drop(columns=["open_time"]).rename(columns={"available_at":"available_at"})
+            base = pd.merge_asof(base.sort_values("open_time"),
+                available.sort_values("available_at"),
+                left_on="open_time",right_on="available_at",direction="backward")
+            base = base.drop(columns=["available_at"])
+            for column in features:
+                base.rename(columns={column:f"tf_{tf}__{column}"},inplace=True)
+        else:
+            for column in features:
+                base[f"tf_{tf}__{column}"] = base[column]
+    return base
 
 def _safe_result(result):
     data = result.to_dict()
@@ -105,7 +157,7 @@ def backtest():
         return ("", 204)
     try:
         strategy, timeframe, candles, fee, slippage, equity = _load_request(request.get_json(silent=True))
-        frame = _market_data(timeframe, candles)
+        frame = _market_data(timeframe, candles, strategy)
         full = run_backtest(frame, strategy, fee, slippage, equity)
         validation = train_test_report(frame, strategy, fee_bps=fee, slippage_bps=slippage, initial_equity=equity)
         quality = score_candidate(validation)
@@ -154,7 +206,7 @@ def optimize():
             raise ValueError("Maximum 25 parameter combinations per optimization.")
         stops = [_number(x, "stop_atr", .5, 5) for x in stops]
         targets = [_number(x, "reward_risk", .5, 6) for x in targets]
-        frame = _market_data(timeframe, candles)
+        frame = _market_data(timeframe, candles, strategy)
         split = int(len(frame) * .70)
         train_frame = frame.iloc[:split].reset_index(drop=True)
         rows = []
