@@ -19,7 +19,8 @@ class QuantLabTests(unittest.TestCase):
     def test_dashboard_strategy_json_loads(self):
         payload={"name":"dashboard","long_conditions":[{"feature":"close","operator":">","value":"ema_200"}],"short_conditions":[{"feature":"close","operator":"<","value":"ema_200"}],"stop_atr":1.8,"reward_risk":2.5,"max_holding_bars":48,"risk_per_trade_pct":0.75}
         loaded=strategy_from_dict(payload)
-        self.assertEqual(loaded.reward_risk,2.5)\n        self.assertEqual(loaded.risk_per_trade_pct,0.75)
+        self.assertEqual(loaded.reward_risk,2.5)
+        self.assertEqual(loaded.risk_per_trade_pct,0.75)
         self.assertEqual(loaded.long_conditions[0].feature,"close")
     def test_backtest_returns_metrics(self):
         data=add_indicators(self.candles())
