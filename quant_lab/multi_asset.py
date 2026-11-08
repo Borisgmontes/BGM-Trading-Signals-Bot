@@ -143,7 +143,7 @@ def run_market_backtest(df: pd.DataFrame, config: dict[str, Any]) -> dict[str, A
         # Cap unleveraged exposure at account equity; short notional uses the same conservative cap.
         quantity = min(quantity, equity/entry)
         gross = direction*(exit_price-entry)*quantity
-        costs = (entry+exit_price)*quantity*(fee+slip)
+        costs = (entry+exit_price)*quantity*fee
         pnl = gross-costs
         before = equity
         equity = max(0.0, equity+pnl)
@@ -165,4 +165,4 @@ def run_market_backtest(df: pd.DataFrame, config: dict[str, Any]) -> dict[str, A
             "profit_factor":gross_profit/gross_loss if gross_loss else (None if gross_profit else 0.0),
             "max_drawdown_pct":dd,"net_return_pct":(final/initial-1)*100,
             "equity_curve":curve,"trade_log":trades,
-            "candles":[{**r,"open_time":r["open_time"].isoformat()} for r in data.tail(1500).where(pd.notna(data.tail(1500)), None).to_dict(orient="records")]}
+            "candles":[{k:(v.isoformat() if k=="open_time" else (None if pd.isna(v) else float(v) if isinstance(v,(int,float)) else v)) for k,v in row.items()} for row in data.tail(1500).to_dict(orient="records")]}
