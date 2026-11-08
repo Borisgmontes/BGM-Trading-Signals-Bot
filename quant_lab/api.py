@@ -86,6 +86,13 @@ def _load_request(payload):
                 if int(feature.split("_")[1])!=expected: raise ValueError(f"Rule feature {feature} does not match configured period {expected}.")
             if feature.startswith(("bb_upper_","bb_lower_")) and int(feature.rsplit("_",1)[1])!=settings["bb_period"]:
                 raise ValueError(f"Rule feature {feature} does not match configured Bollinger period {settings['bb_period']}.")
+            if feature.startswith("volume_ratio_") and int(feature.rsplit("_",1)[1])!=settings["volume_period"]:
+                raise ValueError(f"Rule feature {feature} does not match configured volume period {settings['volume_period']}.")
+            if feature.startswith("macd_hist_"):
+                parts=feature.split("_")
+                configured=[settings["macd_fast"],settings["macd_slow"],settings["macd_signal"]]
+                if list(map(int,parts[2:]))!=configured:
+                    raise ValueError(f"Rule feature {feature} does not match configured MACD {configured}.")
     return strategy, timeframe, candles, fee, slippage, equity
 
 def _market_data(timeframe, candles, strategy=None):
