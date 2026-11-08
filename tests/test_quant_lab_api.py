@@ -17,7 +17,9 @@ class QuantLabApiTests(unittest.TestCase):
         }
         self.payload = {"strategy": payload, "timeframe": "5m", "candles": 700}
 
-    def test_health_endpoint(self):
+    def test_root_and_health_endpoints(self):
+        root = self.client.get("/")
+        self.assertEqual(root.status_code, 200)
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["status"], "ok")
