@@ -3,7 +3,7 @@ import pandas as pd
 from quant_lab.indicators import add_indicators
 from quant_lab.strategy import Condition,Strategy,generate_candidates,strategy_from_dict
 from quant_lab.backtest import run_backtest
-from quant_lab.validation import monte_carlo_trade_bootstrap
+from quant_lab.validation import monte_carlo_trade_bootstrap,train_test_report
 from quant_lab.ranking import score_candidate,score_training_candidate
 
 class QuantLabTests(unittest.TestCase):
@@ -28,6 +28,12 @@ class QuantLabTests(unittest.TestCase):
         result=run_backtest(data,strategy)
         self.assertGreaterEqual(result.trades,0)
         self.assertTrue(-100<=result.net_return_pct<1000000)
+    def test_validation_uses_configured_initial_equity(self):
+        data=add_indicators(self.candles())
+        strategy=Strategy("equity", (Condition("close",">","ema_200"),), (Condition("close","<","ema_200"),))
+        report=train_test_report(data,strategy,initial_equity=2500)
+        self.assertEqual(report["train"]["equity_curve"][0],2500)
+        self.assertEqual(report["out_of_sample"]["equity_curve"][0],2500)
     def test_monte_carlo_is_reproducible(self):
         a=monte_carlo_trade_bootstrap([1,-.5,2,-1],200,3)
         b=monte_carlo_trade_bootstrap([1,-.5,2,-1],200,3)
