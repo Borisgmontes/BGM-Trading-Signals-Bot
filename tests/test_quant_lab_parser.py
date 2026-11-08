@@ -35,6 +35,14 @@ class NaturalLanguageParserTests(unittest.TestCase):
         self.assertEqual(result["strategy"]["long_conditions"][0]["feature"], "rsi_14")
         self.assertIn("volume_ratio", [x["feature"] for x in result["strategy"]["long_conditions"]])
 
+    def test_atr_14_rule_is_supported(self):
+        result = interpret_strategy("LONG: comprar cuando ATR 14 mayor que 100")
+        self.assertEqual(result["strategy"]["long_conditions"][0]["feature"], "atr_14")
+
+    def test_unsupported_ema_period_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Periodo EMA no soportado"):
+            interpret_strategy("LONG: precio por encima de EMA 21 y RSI 14 menor que 65")
+
     def test_unsupported_cross_is_rejected_explicitly(self):
         with self.assertRaisesRegex(ValueError, "cruces de indicadores"):
             interpret_strategy("LONG: cruce EMA 20 con EMA 50")
