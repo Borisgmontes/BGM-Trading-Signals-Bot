@@ -23,8 +23,18 @@ class BacktestResult:
 def _condition_mask(df: pd.DataFrame, conditions: tuple[Condition,...]) -> pd.Series:
     mask = pd.Series(True,index=df.index)
     for rule in conditions:
-        left = df[rule.feature]
-        right = df[rule.value] if isinstance(rule.value,str) else rule.value
+        prefix = f"tf_{rule.timeframe}__" if rule.timeframe else ""
+        left_key = prefix + rule.feature
+        if left_key not in df.columns:
+            raise ValueError(f"Feature {rule.feature} is not available on timeframe {rule.timeframe or 'base'}.")
+        left = df[left_key]
+        if isinstance(rule.value,str):
+            right_key = prefix + rule.value
+            if right_key not in df.columns:
+                raise ValueError(f"Comparison feature {rule.value} is not available on timeframe {rule.timeframe or 'base'}.")
+            right = df[right_key]
+        else:
+            right = rule.value
         if rule.operator == ">": current = left > right
         elif rule.operator == "<": current = left < right
         elif rule.operator == ">=": current = left >= right
@@ -33,12 +43,15 @@ def _condition_mask(df: pd.DataFrame, conditions: tuple[Condition,...]) -> pd.Se
     return mask
 
 def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
-                 slippage_bps: float=2.0, initial_equity: float=10000.0) -> BacktestResult:
+                 slippage_bps: float=2.0, initial_equity: float=10000.0,
+                 base_timeframe: str | None = None) -> BacktestResult:
     if len(df) < 250:
         raise ValueError("At least 250 candles are required for a meaningful BTC test.")
     if not all(math.isfinite(float(x)) for x in (fee_bps, slippage_bps, initial_equity)) or fee_bps < 0 or slippage_bps < 0 or fee_bps > 100 or slippage_bps > 100 or initial_equity <= 0:
         raise ValueError("Fees/slippage must be finite and between 0 and 100 bps; initial equity must be positive.")
-    required = {"open","high","low","close","atr_14"}
+    atr_period = int(strategy.indicator_settings.get("atr_period", 14))
+    atr_key = f"atr_{atr_period}"
+    required = {"open","high","low","close",atr_key}
     if not required.issubset(df.columns):
         raise ValueError(f"Data must include indicators: {sorted(required)}")
     long_signal = _condition_mask(df,strategy.long_conditions)
@@ -53,7 +66,7 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, fee_bps: float=5.0,
     while i < len(df)-1:
         direction = 1 if bool(long_signal.iloc[i]) and not bool(short_signal.iloc[i]) else (
             -1 if bool(short_signal.iloc[i]) and not bool(long_signal.iloc[i]) else 0)
-        if direction == 0 or not math.isfinite(float(df["atr_14"].iloc[i])):
+        if direction == 0 or not math.isfinite(float(df[atr_key].iloc[i])):
             i += 1
             continue
         entry_i = i+1
