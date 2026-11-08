@@ -31,7 +31,7 @@ body{background:#050505;color:var(--text);font-family:Inter,system-ui,-apple-sys
 body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 65% -30%,rgba(229,173,34,.09),transparent 45%);z-index:-1}
 .app-sidebar{position:fixed;z-index:20;inset:0 auto 0 0;width:248px;background:#070707;border-right:1px solid #242424;padding:20px 14px;display:flex;flex-direction:column;gap:18px}
 .app-brand{display:flex;align-items:center;gap:12px;padding:5px 7px 20px;border-bottom:1px solid #202020}
-.app-mark{width:54px;height:54px;border:2px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-weight:900;font-size:23px;box-shadow:0 0 18px #e5ad2226}
+.app-mark{width:62px;height:62px;object-fit:contain;border:1px solid var(--gold);border-radius:50%;display:block;box-shadow:0 0 18px #e5ad2226;background:#050505}
 .app-brand strong{display:block;color:var(--gold);font-size:16px;letter-spacing:1.1px}.app-brand small{display:block;color:#aaa;font-size:8px;letter-spacing:1.3px;margin-top:3px}
 .app-nav{display:grid;gap:5px}.app-nav a{color:#aaa;text-decoration:none;padding:11px 12px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:12px;border-left:2px solid transparent;transition:.18s}
 .app-nav a:hover,.app-nav a.active{color:#f2c34f;background:linear-gradient(90deg,#32250b,#171207);border-left-color:var(--gold)}
@@ -74,7 +74,7 @@ th{border-bottom-color:#333}td{border-bottom-color:#242424}
 @media(max-width:1050px){.shell{padding:17px}.layout>.right{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
 .app-sidebar{position:relative;width:auto;inset:auto;padding:10px 12px;gap:8px;border-right:0;border-bottom:1px solid #282828}
-.app-brand{padding:2px 4px 9px}.app-mark{width:40px;height:40px;font-size:18px}
+.app-brand{padding:2px 4px 9px}.app-mark{width:44px;height:44px}
 .app-nav{display:flex;overflow-x:auto;gap:5px;padding-bottom:3px}.app-nav a{white-space:nowrap;padding:8px 10px;font-size:11px}
 .app-sidebar-foot{display:none}.shell{margin:0;padding:13px}
 .top{align-items:center;flex-direction:row}.brand strong{font-size:14px}.brand small{font-size:8px}
@@ -188,7 +188,7 @@ renderLibrary();renderComparisons();checkApi();
  function mountNav(){
   if(document.querySelector('.app-sidebar'))return;
   const side=document.createElement('aside');side.className='app-sidebar';
-  side.innerHTML='<div class="app-brand"><div class="app-mark">BGM</div><div><strong>QUANTUM LAB</strong><small>TRADING SYSTEMS</small></div></div><nav class="app-nav">'+nav.map(([id,ico,label])=>'<a href="#'+id+'" data-target="'+id+'"><span>'+ico+'</span>'+label+'</a>').join('')+'</nav><div class="app-sidebar-foot"><b>Propiedad de BGM Trading Signals</b><small>EN FASE DE CONSTRUCCIÓN Y PRUEBA</small></div>';
+  side.innerHTML='<div class="app-brand"><img class="app-mark" src="./assets/bgm-trading-signals-logo.webp" alt="BGM Trading Signals logo"><div><strong>QUANTUM LAB</strong><small>TRADING SYSTEMS</small></div></div><nav class="app-nav">'+nav.map(([id,ico,label])=>'<a href="#'+id+'" data-target="'+id+'"><span>'+ico+'</span>'+label+'</a>').join('')+'</nav><div class="app-sidebar-foot"><b>Propiedad de BGM Trading Signals</b><small>EN FASE DE CONSTRUCCIÓN Y PRUEBA</small></div>';
   document.body.insertBefore(side,document.body.firstChild);
   const layout=document.querySelector('.layout'),aside=layout?.querySelector(':scope > aside'),right=layout?.querySelector(':scope > .right');
   const hero=document.querySelector('.hero');if(hero)hero.id='dashboard';
