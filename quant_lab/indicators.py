@@ -27,4 +27,26 @@ def add_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     fast = close.ewm(span=12, adjust=False).mean()
     slow = close.ewm(span=26, adjust=False).mean()
     df["macd_hist"] = (fast-slow) - (fast-slow).ewm(span=9, adjust=False).mean()
+    # Explicit crossover events: true only on the candle where the relationship flips.
+    for fast_period, slow_period in ((10, 20), (20, 50), (50, 200)):
+        fast_line, slow_line = df[f"ema_{fast_period}"], df[f"ema_{slow_period}"]
+        cross_up = (fast_line.shift(1) <= slow_line.shift(1)) & (fast_line > slow_line)
+        cross_down = (fast_line.shift(1) >= slow_line.shift(1)) & (fast_line < slow_line)
+        df[f"ema_{fast_period}_cross_up_ema_{slow_period}"] = cross_up.astype(float)
+        df[f"ema_{fast_period}_cross_down_ema_{slow_period}"] = cross_down.astype(float)
+    # Exchange-local opening events; zoneinfo handles daylight-saving changes.
+    if "open_time" in df.columns:
+        utc_times = pd.to_datetime(df["open_time"], utc=True)
+        sessions = (
+            ("asia", "Asia/Tokyo", "09:00"),
+            ("london", "Europe/London", "08:00"),
+            ("new_york", "America/New_York", "09:30"),
+        )
+        for label, zone, opening in sessions:
+            local = utc_times.dt.tz_convert(zone)
+            hour, minute = (int(part) for part in opening.split(":"))
+            df[f"session_{label}_open"] = ((local.dt.hour == hour) & (local.dt.minute == minute)).astype(float)
+    else:
+        for label in ("asia", "london", "new_york"):
+            df[f"session_{label}_open"] = 0.0
     return df.replace([float("inf"), float("-inf")], float("nan"))
