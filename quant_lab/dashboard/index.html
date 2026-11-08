@@ -30,11 +30,11 @@ function buildStrategy(){
  if(!hasLong&&!hasShort) unsupported.push('Indica si opera LONG, SHORT o ambos.');
  if(hasShort) unsupported.push('Esta versión interpreta reglas LONG y genera su contraparte SHORT invertida. Las reglas SHORT independientes todavía no están soportadas.');
  if(cross){} 
- const timeframeMatch=s.match(/\\b(1m|5m|15m|1h|4h|1d)\\b/);if(timeframeMatch)document.getElementById('timeframe').value=timeframeMatch[1];
- const stopMatch=s.match(/(?:stop(?:\\s*loss)?|sl)\\s*(?:de|=|:)?\\s*(\\d+(?:\\.\\d+)?)\\s*atr/i);if(stopMatch)document.getElementById('stopAtr').value=stopMatch[1];
- const targetMatch=s.match(/(?:objetivo|target|take\\s*profit|tp)\\s*(?:de|=|:)?\\s*(\\d+(?:\\.\\d+)?)\\s*r/i);if(targetMatch)document.getElementById('rr').value=targetMatch[1];
- const riskMatch=s.match(/riesgo(?:\\s+por\\s+(?:operaci[oó]n|trade))?\\s*(?:de|=|:)?\\s*(\\d+(?:\\.\\d+)?)\\s*%/i);if(riskMatch)document.getElementById('riskPct').value=riskMatch[1];
- const barsMatch=s.match(/(?:m[aá]ximo|max(?:imum)?)\\s*(?:de)?\\s*(\\d+)\\s*(?:velas|barras)/i);if(barsMatch)document.getElementById('holding').value=barsMatch[1];
+ const timeframeMatch=s.match(/\b(1m|5m|15m|1h|4h|1d)\b/);if(timeframeMatch)document.getElementById('timeframe').value=timeframeMatch[1];
+ const stopMatch=s.match(/(?:stop(?:\s*loss)?|sl)\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*atr/i);if(stopMatch)document.getElementById('stopAtr').value=stopMatch[1];
+ const targetMatch=s.match(/(?:objetivo|target|take\s*profit|tp)\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*r/i);if(targetMatch)document.getElementById('rr').value=targetMatch[1];
+ const riskMatch=s.match(/riesgo(?:\s+por\s+(?:operaci[oó]n|trade))?\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*%/i);if(riskMatch)document.getElementById('riskPct').value=riskMatch[1];
+ const barsMatch=s.match(/(?:m[aá]ximo|max(?:imum)?)\s*(?:de)?\s*(\d+)\s*(?:velas|barras)/i);if(barsMatch)document.getElementById('holding').value=barsMatch[1];
  const stop=Number(document.getElementById('stopAtr').value),rr=Number(document.getElementById('rr').value),holding=Number(document.getElementById('holding').value),risk=Number(document.getElementById('riskPct').value);
  if(!(stop>=.5&&stop<=5&&rr>=.5&&rr<=6&&Number.isInteger(holding)&&holding>=1&&holding<=1000&&risk>=.1&&risk<=5)) unsupported.push('Parámetros fuera de rango: Stop ATR 0.5–5, objetivo 0.5–6R, velas 1–1000 y riesgo 0.1–5%.');
  if(unsupported.length||!hasLong||!long.length){builtStrategy=null;downloadStrategy.disabled=true;document.getElementById("runBacktest").disabled=true;document.getElementById("optimizeParams").disabled=true;parseState.textContent='Requiere revisión';parseState.className='tag gold';parsedRules.textContent='CONDICIONES RECONOCIDAS:\n'+(long.map(x=>'• '+x.description).join('\n')||'• Ninguna')+'\n\nPUNTOS PENDIENTES:\n• '+unsupported.join('\n• ');parseMessage.textContent='No se generó una estrategia exportable. Aclara la descripción o utiliza condiciones compatibles.';return;}
