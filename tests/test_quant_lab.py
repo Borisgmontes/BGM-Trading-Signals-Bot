@@ -4,7 +4,7 @@ from quant_lab.indicators import add_indicators
 from quant_lab.strategy import Condition,Strategy,generate_candidates,strategy_from_dict
 from quant_lab.backtest import run_backtest
 from quant_lab.validation import monte_carlo_trade_bootstrap
-from quant_lab.ranking import score_candidate
+from quant_lab.ranking import score_candidate,score_training_candidate
 
 class QuantLabTests(unittest.TestCase):
     @staticmethod
@@ -32,6 +32,9 @@ class QuantLabTests(unittest.TestCase):
         a=monte_carlo_trade_bootstrap([1,-.5,2,-1],200,3)
         b=monte_carlo_trade_bootstrap([1,-.5,2,-1],200,3)
         self.assertEqual(a,b)
+    def test_training_score_uses_training_metrics(self):
+        result={"trades":50,"profit_factor":1.5,"max_drawdown_pct":10,"net_return_pct":12,"expectancy_pct":.4}
+        self.assertGreater(score_training_candidate(result)["training_score"],0)
     def test_quality_gate_rejects_small_samples(self):
         report={"train":{"net_return_pct":20},"out_of_sample":{"trades":4,"profit_factor":2.0,"max_drawdown_pct":3,"net_return_pct":5,"expectancy_pct":1}}
         self.assertFalse(score_candidate(report)["eligible_for_paper_testing"])
