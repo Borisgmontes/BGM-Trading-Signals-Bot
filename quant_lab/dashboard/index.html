@@ -23,6 +23,66 @@ table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:10px}th{t
 .library{display:grid;gap:8px}.saved{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#0c1422;border:1px solid #29374f;padding:10px;border-radius:9px}.saved b{font-size:11px}.saved small{display:block;color:var(--muted);font-size:9px}.saved .btnrow{margin:0}.saved button{padding:7px 9px}
 .empty{color:var(--muted);font-size:11px;padding:10px}.footer{text-align:center;color:#68758b;font-size:10px;padding:18px}.pill{font-size:10px;padding:4px 8px;border-radius:30px;background:#202b40;color:#b8c7dc}
 @media(max-width:1100px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.shell{padding:13px}.hero{align-items:flex-start;flex-direction:column}.metrics{gap:8px}.metric{padding:12px}.metric .value{font-size:18px}.top{align-items:flex-start;flex-direction:column}.saved{align-items:flex-start;flex-direction:column}}
+
+/* BGM Quantum Lab — premium black & gold dashboard */
+:root{--bg:#050505;--panel:#101010;--panel2:#151515;--line:#292929;--muted:#9a9a9a;--text:#f5f5f5;--gold:#e5ad22;--green:#19c985;--red:#f05252;--blue:#258fc5}
+*{box-sizing:border-box}
+body{background:#050505;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 65% -30%,rgba(229,173,34,.09),transparent 45%);z-index:-1}
+.app-sidebar{position:fixed;z-index:20;inset:0 auto 0 0;width:248px;background:#070707;border-right:1px solid #242424;padding:20px 14px;display:flex;flex-direction:column;gap:18px}
+.app-brand{display:flex;align-items:center;gap:12px;padding:5px 7px 20px;border-bottom:1px solid #202020}
+.app-mark{width:54px;height:54px;border:2px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-weight:900;font-size:23px;box-shadow:0 0 18px #e5ad2226}
+.app-brand strong{display:block;color:var(--gold);font-size:16px;letter-spacing:1.1px}.app-brand small{display:block;color:#aaa;font-size:8px;letter-spacing:1.3px;margin-top:3px}
+.app-nav{display:grid;gap:5px}.app-nav a{color:#aaa;text-decoration:none;padding:11px 12px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:12px;border-left:2px solid transparent;transition:.18s}
+.app-nav a:hover,.app-nav a.active{color:#f2c34f;background:linear-gradient(90deg,#32250b,#171207);border-left-color:var(--gold)}
+.app-nav a span{width:18px;text-align:center;color:var(--gold);font-size:15px}
+.app-sidebar-foot{margin-top:auto;border:1px solid #252525;background:#101010;border-radius:10px;padding:13px;text-align:center}
+.app-sidebar-foot b{display:block;font-size:11px}.app-sidebar-foot small{color:#e5ad22;font-size:9px}
+.shell{max-width:none;margin:0 0 0 248px;padding:22px 25px 30px}
+.top{margin-bottom:17px;padding-bottom:14px;border-bottom:1px solid #202020}
+.brand .logo{width:42px;height:42px;border-radius:50%;border:2px solid var(--gold);background:#100e08;color:var(--gold);box-shadow:0 0 14px #e5ad2226}
+.brand strong{font-size:17px;color:var(--gold);letter-spacing:1.5px}.brand small{letter-spacing:1.4px}
+.status{border:1px solid #333;background:#111;border-radius:8px;padding:9px 14px}.status i{background:var(--green)}
+.hero{margin:10px 0 15px;align-items:center}.hero h1{font-size:25px;letter-spacing:-.5px}.hero p{font-size:12px}
+.eyebrow{color:var(--gold);font-size:10px;letter-spacing:2px}
+.notice{border-color:#594414;background:#1a1509;color:#d9bd76}
+.layout{display:flex;flex-direction:column;gap:16px}
+.layout>.right{order:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.layout>aside{order:2}
+.panel,.metric{background:linear-gradient(145deg,#151515,#0d0d0d);border:1px solid #292929;border-radius:12px;box-shadow:0 7px 24px #0005}
+.panel{padding:17px}.panel h2,.head h2{font-size:14px;color:#f3f3f3}
+.metrics{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.metric{padding:15px;background:linear-gradient(145deg,#171717,#101010);position:relative;overflow:hidden}
+.metric:after{content:"";position:absolute;right:-25px;top:-25px;width:80px;height:80px;border:1px solid #e5ad2220;border-radius:50%}
+.metric .label{font-size:10px;color:#aaa}.metric .value{font-size:23px;color:#fff}.metric .sub{font-size:9px;color:#888}
+.right>.panel:nth-of-type(2){grid-column:1/-1}
+.right>#visualBuilder{grid-column:1/-1}
+.right>.panel{min-width:0}
+canvas{height:245px}
+.btn{background:linear-gradient(135deg,#efb72b,#c18b12);border:1px solid #e6b12c;color:#101010;border-radius:7px}
+.btn.secondary{background:#171717;border-color:#393939;color:#ddd}
+.btn:hover{filter:brightness(1.1)}
+input,select,textarea{background:#090909;border-color:#343434;color:#eee}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+.sectionlabel{color:var(--gold)}
+.rules{background:#0b0b0b;border-color:#333}
+.saved{background:#0b0b0b;border-color:#333}
+th{border-bottom-color:#333}td{border-bottom-color:#242424}
+.pill{background:#29210f;color:#e9c65e}
+.footer{color:#777}
+.app-main-title{display:none}
+@media(max-width:1050px){.shell{padding:17px}.layout>.right{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){
+.app-sidebar{position:relative;width:auto;inset:auto;padding:10px 12px;gap:8px;border-right:0;border-bottom:1px solid #282828}
+.app-brand{padding:2px 4px 9px}.app-mark{width:40px;height:40px;font-size:18px}
+.app-nav{display:flex;overflow-x:auto;gap:5px;padding-bottom:3px}.app-nav a{white-space:nowrap;padding:8px 10px;font-size:11px}
+.app-sidebar-foot{display:none}.shell{margin:0;padding:13px}
+.top{align-items:center;flex-direction:row}.brand strong{font-size:14px}.brand small{font-size:8px}
+.hero{align-items:flex-start;flex-direction:column}.layout>.right{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.right>.panel:nth-of-type(2),.right>#visualBuilder{grid-column:1}
+.metric{padding:12px}.metric .value{font-size:19px}
+}
+
 </style>
 </head>
 <body><main class="shell">
@@ -121,4 +181,33 @@ $('clearComparisons').addEventListener('click',()=>{localStorage.removeItem(RESU
 ['strategyName','description','timeframe','candles','initialEquity','feeBps','slippageBps','stopAtr','rewardRisk','riskPct','maxHolding'].forEach(id=>{ $(id).addEventListener('input',markDirty); $(id).addEventListener('change',markDirty); });
 try{const saved=JSON.parse(localStorage.getItem(CONFIG_KEY)||'null');if(saved){applySnapshot(saved);savedSignature=signature();setStatus('Última configuración guardada restaurada. Pulsa Interpretar reglas.','ok')}}catch(e){}
 renderLibrary();renderComparisons();checkApi();
-</script><script src="builder-v2.js" defer></script></body></html>
+</script><script src="builder-v2.js" defer></script>
+<script>
+(()=> {
+ const nav=[['dashboard','⌂','Dashboard'],['strategy-builder','▧','Estrategias'],['backtest','▤','Backtesting'],['validation','◈','Validación'],['comparisons','▥','Resultados'],['library','▣','Biblioteca'],['help','?','Ayuda']];
+ function mountNav(){
+  if(document.querySelector('.app-sidebar'))return;
+  const side=document.createElement('aside');side.className='app-sidebar';
+  side.innerHTML='<div class="app-brand"><div class="app-mark">BGM</div><div><strong>QUANTUM LAB</strong><small>TRADING SYSTEMS</small></div></div><nav class="app-nav">'+nav.map(([id,ico,label])=>'<a href="#'+id+'" data-target="'+id+'"><span>'+ico+'</span>'+label+'</a>').join('')+'</nav><div class="app-sidebar-foot"><b>Propiedad de BGM Trading Signals</b><small>EN FASE DE CONSTRUCCIÓN Y PRUEBA</small></div>';
+  document.body.insertBefore(side,document.body.firstChild);
+  const layout=document.querySelector('.layout'),aside=layout?.querySelector(':scope > aside'),right=layout?.querySelector(':scope > .right');
+  const hero=document.querySelector('.hero');if(hero)hero.id='dashboard';
+  if(aside){aside.id='strategy-builder';}
+  const panels=right?.querySelectorAll(':scope > .panel')||[];
+  if(panels[0])panels[0].id='backtest';
+  if(panels[1])panels[1].id='validation';
+  if(panels[2])panels[2].id='comparisons';
+  const builder=document.getElementById('visualBuilder');if(builder)builder.id='library';
+  const help=document.querySelector('.footer');if(help)help.id='help';
+  side.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{
+   side.querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+   const target=document.getElementById(a.dataset.target);if(target)target.scrollIntoView({behavior:'smooth',block:'start'});
+  }));
+  side.querySelector('a')?.classList.add('active');
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountNav);else mountNav();
+ const observer=new MutationObserver(()=>{const b=document.getElementById('visualBuilder');if(b&&b.id!=='library')b.id='library'});
+ observer.observe(document.body,{childList:true,subtree:true});
+})();
+</script>
+</body></html>
