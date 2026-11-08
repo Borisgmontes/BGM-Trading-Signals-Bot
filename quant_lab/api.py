@@ -89,7 +89,7 @@ def backtest():
         strategy, timeframe, candles, fee, slippage, equity = _load_request(request.get_json(silent=True))
         frame = _market_data(timeframe, candles)
         full = run_backtest(frame, strategy, fee, slippage, equity)
-        validation = train_test_report(frame, strategy, fee_bps=fee, slippage_bps=slippage)
+        validation = train_test_report(frame, strategy, fee_bps=fee, slippage_bps=slippage, initial_equity=equity)
         quality = score_candidate(validation)
         return jsonify({
             "ok": True, "market": "BTCUSDT", "timeframe": timeframe,
@@ -158,7 +158,7 @@ def optimize():
         rows.sort(key=lambda x: (x["training_score"], x["net_return_train_pct"]), reverse=True)
         best = rows[0]
         selected_strategy = replace(strategy, stop_atr=best["stop_atr"], reward_risk=best["reward_risk"])
-        validation = train_test_report(frame, selected_strategy, fee_bps=fee, slippage_bps=slippage)
+        validation = train_test_report(frame, selected_strategy, fee_bps=fee, slippage_bps=slippage, initial_equity=equity)
         selected_test = validation["out_of_sample"]
         selected_quality = score_candidate(validation)
         return jsonify({
