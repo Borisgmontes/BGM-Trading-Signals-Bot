@@ -165,4 +165,4 @@ def run_market_backtest(df: pd.DataFrame, config: dict[str, Any]) -> dict[str, A
             "profit_factor":gross_profit/gross_loss if gross_loss else (None if gross_profit else 0.0),
             "max_drawdown_pct":dd,"net_return_pct":(final/initial-1)*100,
             "equity_curve":curve,"trade_log":trades,
-            "candles":data.tail(1500).replace({float("nan"):None}).to_dict(orient="records")}
+            "candles":[{**r,"open_time":r["open_time"].isoformat()} for r in data.tail(1500).where(pd.notna(data.tail(1500)), None).to_dict(orient="records")]}
