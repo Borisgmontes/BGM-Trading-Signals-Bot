@@ -1,5 +1,5 @@
 """Private single-owner PWA dashboard API and web-push delivery."""
-import json, os, hmac, logging, base64
+import json, os, hmac, logging, base64, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -21,6 +21,7 @@ _MEM_CONFIG = dict(DEFAULT)
 _MEM_SIGNALS = []
 _MEM_SUBSCRIPTIONS = {}
 _MEM_NEXT_ID = 1
+_MEM_STATS_EPOCH = {}
 _SCAN_STATUS = {
     "last_attempt_at": None, "last_success_at": None, "last_candle_time": None,
     "last_price": None, "candles_received": 0, "timeframe": None,
@@ -30,6 +31,25 @@ _SCAN_STATUS = {
 
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def strategy_hash(config):
+    relevant = {"symbol": config.get("symbol", "BTCUSDT"),
+                "timeframe": config.get("timeframe"),
+                "modules": sorted(config.get("modules") or []),
+                "min_score": int(config.get("min_score", 3)),
+                "target_r": float(config.get("target_r", 2.0))}
+    raw = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _current_epoch(config_hash):
+    if not os.getenv("DATABASE_URL", "").strip():
+        return int(_MEM_STATS_EPOCH.get(config_hash, 0))
+    with _db() as conn:
+        row = conn.execute("SELECT epoch FROM bgm_dashboard_strategy_state WHERE strategy_hash=%s",
+                           (config_hash,)).fetchone()
+        return int(row["epoch"]) if row else 0
 
 def scan_status():
     return dict(_SCAN_STATUS)
@@ -92,6 +112,13 @@ def init_dashboard_db():
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result_reason TEXT")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS last_checked_candle BIGINT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS strategy_hash TEXT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS config_snapshot JSONB")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS stats_epoch INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE bgm_dashboard_signals SET strategy_hash='legacy' WHERE strategy_hash IS NULL")
+        conn.execute("CREATE TABLE IF NOT EXISTS bgm_dashboard_strategy_state (strategy_hash TEXT PRIMARY KEY, epoch INTEGER NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())")
+        conn.execute("ALTER TABLE bgm_dashboard_signals DROP CONSTRAINT IF EXISTS bgm_dashboard_signals_candle_id_timeframe_key")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS bgm_dashboard_signals_candle_tf_strategy_uq ON bgm_dashboard_signals(candle_id,timeframe,strategy_hash)")
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
@@ -129,28 +156,49 @@ def list_signals():
 
 
 def list_trades():
+    cfg = get_settings()
+    active_hash = strategy_hash(cfg)
+    epoch = _current_epoch(active_hash)
     if not os.getenv("DATABASE_URL", "").strip():
-        rows=[dict(x) for x in _MEM_SIGNALS if x.get("status") in ("CONFIRMED","CLOSED")]
+        all_rows = [dict(x) for x in _MEM_SIGNALS if x.get("status") in ("CONFIRMED", "CLOSED")]
     else:
         with _db() as conn:
-            rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
-              confirmations,status,result,result_reason,created_at,closed_at FROM bgm_dashboard_signals
-              WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 500""").fetchall()
-        rows=[_serialize_signal(r) for r in rows]
-    wins=sum(x.get("result")=="WIN" for x in rows); losses=sum(x.get("result")=="LOSS" for x in rows)
-    closed=wins+losses
-    r_values=[]
-    for x in rows:
-        if x.get("result") not in ("WIN","LOSS"): continue
-        risk=abs(float(x["entry"])-float(x["stop"]))
-        reward=abs(float(x["target"])-float(x["entry"]))
-        multiple=(reward/risk) if risk else 0.0
-        r_values.append(multiple if x["result"]=="WIN" else -1.0)
-    gp=sum(v for v in r_values if v>0); gl=abs(sum(v for v in r_values if v<0))
-    return {"trades":rows,"stats":{"total":len(rows),"wins":wins,"losses":losses,
-      "open":sum(x.get("status")=="CONFIRMED" for x in rows),
-      "win_rate":round(100*wins/closed,1) if closed else None,
-      "profit_factor":round(gp/gl,2) if gl else (None if not gp else "∞"),"net_r":round(sum(r_values),2)}}
+            rows = conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+              confirmations,status,result,result_reason,created_at,closed_at,strategy_hash,config_snapshot,stats_epoch
+              FROM bgm_dashboard_signals WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 2000""").fetchall()
+        all_rows = [_serialize_signal(r) for r in rows]
+
+    def summarize(rows):
+        wins = sum(x.get("result") == "WIN" for x in rows)
+        losses = sum(x.get("result") == "LOSS" for x in rows)
+        closed = wins + losses
+        r_values = []
+        for x in rows:
+            if x.get("result") not in ("WIN", "LOSS"):
+                continue
+            risk = abs(float(x["entry"]) - float(x["stop"]))
+            reward = abs(float(x["target"]) - float(x["entry"]))
+            multiple = reward / risk if risk else 0.0
+            r_values.append(multiple if x["result"] == "WIN" else -1.0)
+        gp = sum(v for v in r_values if v > 0)
+        gl = abs(sum(v for v in r_values if v < 0))
+        return {"total": len(rows), "wins": wins, "losses": losses,
+                "open": sum(x.get("status") == "CONFIRMED" for x in rows),
+                "win_rate": round(100 * wins / closed, 1) if closed else None,
+                "profit_factor": round(gp / gl, 2) if gl else (None if not gp else "∞"),
+                "net_r": round(sum(r_values), 2), "closed": closed}
+
+    current = [x for x in all_rows if x.get("strategy_hash") == active_hash and int(x.get("stats_epoch", 0)) == epoch]
+    grouped = {}
+    for row in all_rows:
+        grouped.setdefault(row.get("strategy_hash") or "legacy", []).append(row)
+    strategies = []
+    for key, rows in grouped.items():
+        strategies.append({"strategy_hash": key, "config": rows[0].get("config_snapshot") or {},
+                           "stats": summarize(rows), "is_current": key == active_hash})
+    strategies.sort(key=lambda x: (not x["is_current"], -x["stats"]["total"]))
+    return {"trades": current[-500:], "stats": summarize(current),
+            "strategy_hash": active_hash, "stats_epoch": epoch, "strategies": strategies}
 
 
 def update_trade_result(signal_id,result):
@@ -312,9 +360,15 @@ def scan_dashboard():
             return
         probability=estimate_probability(df,cfg,signal["direction"])
         signal["probability"] = probability
+        config_hash = strategy_hash(cfg)
+        stats_epoch = _current_epoch(config_hash)
+        signal["strategy_hash"] = config_hash
+        signal["config_snapshot"] = dict(cfg)
+        signal["stats_epoch"] = stats_epoch
         if not os.getenv("DATABASE_URL", "").strip():
             global _MEM_NEXT_ID
-            if any(x["candle_id"] == candle_id and x["timeframe"] == cfg["timeframe"] for x in _MEM_SIGNALS):
+            if any(x["candle_id"] == candle_id and x["timeframe"] == cfg["timeframe"]
+                   and x.get("strategy_hash") == config_hash for x in _MEM_SIGNALS):
                 log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s price=%.2f signal=duplicate",
                          cfg["timeframe"],len(df),price)
                 return
@@ -328,10 +382,12 @@ def scan_dashboard():
             return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
-              probability,confirmations,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
-              ON CONFLICT(candle_id,timeframe) DO NOTHING RETURNING id""",
+              probability,confirmations,created_at,strategy_hash,config_snapshot,stats_epoch)
+              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
+              ON CONFLICT(candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
               (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
-               signal["score"],signal["maximum"],probability,json.dumps(signal["confirmations"]))).fetchone()
+               signal["score"],signal["maximum"],probability,json.dumps(signal["confirmations"]),
+               config_hash,json.dumps(cfg),stats_epoch)).fetchone()
         if row:
             signal["id"]=str(row["id"])
             _SCAN_STATUS["last_signal_at"] = _utc_now()
@@ -377,6 +433,19 @@ def handle(handler):
         elif path=="/api/dashboard/settings" and handler.command=="POST": _json(handler,200,set_settings(_read(handler)))
         elif path=="/api/dashboard/signals" and handler.command=="GET": _json(handler,200,{"signals":list_signals()})
         elif path=="/api/dashboard/trades" and handler.command=="GET": _json(handler,200,list_trades())
+        elif path=="/api/dashboard/trades/reset" and handler.command=="POST":
+            config_hash = strategy_hash(get_settings())
+            if not os.getenv("DATABASE_URL", "").strip():
+                _MEM_STATS_EPOCH[config_hash] = _current_epoch(config_hash) + 1
+                new_epoch = _MEM_STATS_EPOCH[config_hash]
+            else:
+                with _db() as conn:
+                    row = conn.execute("""INSERT INTO bgm_dashboard_strategy_state(strategy_hash,epoch,updated_at)
+                      VALUES(%s,1,now()) ON CONFLICT(strategy_hash) DO UPDATE
+                      SET epoch=bgm_dashboard_strategy_state.epoch+1,updated_at=now()
+                      RETURNING epoch""", (config_hash,)).fetchone()
+                    new_epoch = int(row["epoch"])
+            _json(handler,200,{"ok":True,"strategy_hash":config_hash,"stats_epoch":new_epoch})
         elif path=="/api/dashboard/status" and handler.command=="GET":
             _json(handler,200,{"scan":scan_status(),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL","").strip() else "memory_volatile"})
         elif path=="/api/dashboard/push-key" and handler.command=="GET":
