@@ -104,7 +104,8 @@ def init_dashboard_db():
         conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_signals (
           id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, timeframe TEXT NOT NULL, direction TEXT NOT NULL,
           entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
-          score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION,
+          score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION, probability_samples INTEGER, probability_wins INTEGER,
+          probability_ci_low DOUBLE PRECISION, probability_ci_high DOUBLE PRECISION,
           confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
           result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
           UNIQUE(candle_id,timeframe))""")
@@ -112,6 +113,10 @@ def init_dashboard_db():
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result_reason TEXT")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS last_checked_candle BIGINT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_samples INTEGER")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_wins INTEGER")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_ci_low DOUBLE PRECISION")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_ci_high DOUBLE PRECISION")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS strategy_hash TEXT")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS config_snapshot JSONB")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS stats_epoch INTEGER NOT NULL DEFAULT 0")
@@ -151,6 +156,7 @@ def list_signals():
         return [dict(x) for x in reversed(_MEM_SIGNALS) if x["status"]=="CANDIDATE"][-30:]
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+          probability_samples,probability_wins,probability_ci_low,probability_ci_high,
           confirmations,status,created_at FROM bgm_dashboard_signals WHERE status='CANDIDATE' ORDER BY id DESC LIMIT 30""").fetchall()
     return [_serialize_signal(r) for r in rows]
 
@@ -169,6 +175,7 @@ def list_trades():
     else:
         with _db() as conn:
             rows = conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+              probability_samples,probability_wins,probability_ci_low,probability_ci_high,
               confirmations,status,result,result_reason,created_at,closed_at,strategy_hash,config_snapshot,stats_epoch
               FROM bgm_dashboard_signals WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 2000""").fetchall()
         all_rows = [_serialize_signal(r) for r in rows]
@@ -354,7 +361,7 @@ def scan_dashboard():
     try:
         cfg=get_settings()
         _SCAN_STATUS["timeframe"] = cfg["timeframe"]
-        from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability
+        from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability_details
         df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
         if df is None or len(df) < 205:
             raise ValueError("El proveedor devolvió menos de 205 velas utilizables.")
@@ -380,8 +387,8 @@ def scan_dashboard():
             log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=none",
                      cfg["timeframe"],len(df),candle_time,price)
             return
-        probability=estimate_probability(df,cfg,signal["direction"])
-        signal["probability"] = probability
+        probability_stats=estimate_probability_details(df,cfg,signal["direction"])
+        signal.update(probability_stats)
         config_hash = strategy_hash(cfg)
         stats_epoch = _current_epoch(config_hash)
         signal["strategy_hash"] = config_hash
@@ -404,11 +411,13 @@ def scan_dashboard():
             return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
-              probability,confirmations,created_at,strategy_hash,config_snapshot,stats_epoch)
-              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
+              probability,probability_samples,probability_wins,probability_ci_low,probability_ci_high,
+              confirmations,created_at,strategy_hash,config_snapshot,stats_epoch)
+              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
               ON CONFLICT(candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
               (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
-               signal["score"],signal["maximum"],probability,json.dumps(signal["confirmations"]),
+               signal["score"],signal["maximum"],signal["probability"],signal["samples"],signal["wins"],
+               signal["ci_low"],signal["ci_high"],json.dumps(signal["confirmations"]),
                config_hash,json.dumps(cfg),stats_epoch)).fetchone()
         if row:
             signal["id"]=str(row["id"])
