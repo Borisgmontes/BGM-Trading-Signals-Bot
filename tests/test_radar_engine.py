@@ -127,11 +127,11 @@ def test_long_signal_requires_aligned_closed_higher_timeframe():
     base = frame("LONG")
     base["close_time"] = base["open_time"] + 299999
     higher = frame("LONG")
-    higher["close_time"] = higher["open_time"] + 299999
+    higher["close_time"] = 1_000_000 + higher.index * 1000
     cfg = config(higher_timeframe="15m")
     _, aligned = evaluate_radar(base, cfg, higher)
     assert aligned is not None
     bearish = frame("SHORT")
-    bearish["close_time"] = bearish["open_time"] + 899999
+    bearish["close_time"] = 1_000_000 + bearish.index * 1000
     _, blocked = evaluate_radar(base, cfg, bearish)
     assert blocked is None
