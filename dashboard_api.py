@@ -111,6 +111,7 @@ def init_dashboard_db():
           result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
           UNIQUE(candle_id,timeframe))""")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result TEXT")
+        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result_reason TEXT")
         conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS last_checked_candle BIGINT")
@@ -178,7 +179,7 @@ def list_trades():
         with _db() as conn:
             rows = conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
               probability_samples,probability_wins,probability_ci_low,probability_ci_high,
-              confirmations,status,result,result_reason,created_at,closed_at,strategy_hash,config_snapshot,stats_epoch
+              confirmations,status,result,result_reason,exit_price,created_at,closed_at,strategy_hash,config_snapshot,stats_epoch
               FROM bgm_dashboard_signals WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 2000""").fetchall()
         all_rows = [_serialize_signal(r) for r in rows]
 
@@ -192,8 +193,15 @@ def list_trades():
                 continue
             risk = abs(float(x["entry"]) - float(x["stop"]))
             reward = abs(float(x["target"]) - float(x["entry"]))
-            multiple = reward / risk if risk else 0.0
-            r_values.append(multiple if x["result"] == "WIN" else -1.0)
+            exit_price = x.get("exit_price")
+            if exit_price is not None and risk:
+                direction_sign = 1.0 if x.get("direction") == "LONG" else -1.0
+                multiple = direction_sign * (float(exit_price) - float(x["entry"])) / risk
+            else:
+                multiple = reward / risk if risk else 0.0
+                if x["result"] != "WIN":
+                    multiple = -1.0
+            r_values.append(multiple)
         gross_profit = sum(v for v in r_values if v > 0)
         gross_loss = abs(sum(v for v in r_values if v < 0))
         equity = peak = max_drawdown = 0.0
@@ -257,9 +265,15 @@ def track_open_signals(df,timeframe,horizon=20):
             item["direction"],candle["high"],candle["low"],item["stop"],item["target"]
         )
         candle_ms=int(candle["open_time"])
-        if result is None and candle_ms-entry_ms >= horizon_ms:
-            return "LOSS","HORIZON_EXPIRED"
-        return result,reason
+        if result == "WIN":
+            exit_price = float(item["target"])
+        elif result == "LOSS":
+            exit_price = float(item["stop"])
+        elif candle_ms-entry_ms >= horizon_ms:
+            return "LOSS","HORIZON_EXPIRED",float(candle.get("close",item["entry"]))
+        else:
+            return None,None,None
+        return result,reason,exit_price
 
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
@@ -274,10 +288,11 @@ def track_open_signals(df,timeframe,horizon=20):
                 candle_ms=int(candle["open_time"])
                 if candle_ms<=max(entry_ms,last_checked):
                     continue
-                result,reason=outcome_for(item,candle,entry_ms)
+                result,reason,exit_price=outcome_for(item,candle,entry_ms)
                 item["last_checked_candle"]=candle_ms
                 if result:
-                    item.update({"status":"CLOSED","result":result,"result_reason":reason,"closed_at":_utc_now()})
+                    item.update({"status":"CLOSED","result":result,"result_reason":reason,
+                                 "exit_price":exit_price,"closed_at":_utc_now()})
                     closed.append(dict(item))
                     break
         return closed
@@ -295,11 +310,12 @@ def track_open_signals(df,timeframe,horizon=20):
                 candle_ms=int(candle["open_time"])
                 if candle_ms<=max(entry_ms,last_checked):
                     continue
-                result,reason=outcome_for(row,candle,entry_ms)
+                result,reason,exit_price=outcome_for(row,candle,entry_ms)
                 if result:
                     updated=conn.execute("""UPDATE bgm_dashboard_signals SET status='CLOSED',result=%s,result_reason=%s,
-                      closed_at=now(),last_checked_candle=%s WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL
-                      RETURNING id,result,result_reason""",(result,reason,candle_ms,row["id"])).fetchone()
+                      exit_price=%s,closed_at=now(),last_checked_candle=%s
+                      WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL
+                      RETURNING id,result,result_reason,exit_price""",(result,reason,exit_price,candle_ms,row["id"])).fetchone()
                     if updated:
                         closed.append(dict(updated))
                     break
