@@ -388,7 +388,11 @@ def scan_dashboard():
                      cfg["timeframe"],len(df),candle_time,price)
             return
         probability_stats=estimate_probability_details(df,cfg,signal["direction"])
-        signal.update(probability_stats)
+        signal["probability"] = probability_stats["probability"]
+        signal["probability_samples"] = probability_stats["samples"]
+        signal["probability_wins"] = probability_stats["wins"]
+        signal["probability_ci_low"] = probability_stats["ci_low"]
+        signal["probability_ci_high"] = probability_stats["ci_high"]
         config_hash = strategy_hash(cfg)
         stats_epoch = _current_epoch(config_hash)
         signal["strategy_hash"] = config_hash
@@ -416,8 +420,8 @@ def scan_dashboard():
               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
               ON CONFLICT(candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
               (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
-               signal["score"],signal["maximum"],signal["probability"],signal["samples"],signal["wins"],
-               signal["ci_low"],signal["ci_high"],json.dumps(signal["confirmations"]),
+               signal["score"],signal["maximum"],signal["probability"],signal["probability_samples"],signal["probability_wins"],
+               signal["probability_ci_low"],signal["probability_ci_high"],json.dumps(signal["confirmations"]),
                config_hash,json.dumps(cfg),stats_epoch)).fetchone()
         if row:
             signal["id"]=str(row["id"])
