@@ -1,4 +1,14 @@
 (() => {
+  // Google Analytics 4 — BGM Quantum Lab
+  const GA4_ID='G-VK8Z1YD8GQ';
+  window.dataLayer=window.dataLayer||[];
+  window.gtag=window.gtag||function(){window.dataLayer.push(arguments)};
+  window.gtag('js',new Date());
+  window.gtag('config',GA4_ID);
+  const gaScript=document.createElement('script');
+  gaScript.async=true;
+  gaScript.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(GA4_ID);
+  document.head.appendChild(gaScript);
   const API='https://bgm-quant-lab-api.onrender.com';
   const getId=(key)=>{try{let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID();localStorage.setItem(key,v)}return v}catch{return ''}};
   const visitor=getId('bgmql.visitor.v1');
