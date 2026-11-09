@@ -1,6 +1,6 @@
 import pandas as pd
 
-from radar_engine import evaluate_radar, validate_radar_config, format_radar_alert, estimate_probability
+from radar_engine import (evaluate_radar, validate_radar_config, format_radar_alert, estimate_probability, estimate_probability_details, _wilson_interval)
 
 
 def config(**overrides):
@@ -66,3 +66,33 @@ def test_radar_no_signal_when_trend_is_flat():
 
 def test_probability_is_hidden_when_history_is_insufficient():
     assert estimate_probability(frame("LONG"), config(), "LONG") is None
+
+
+def test_wilson_interval_is_bounded_and_narrows_with_more_samples():
+    low_small, high_small = _wilson_interval(5, 10)
+    low_large, high_large = _wilson_interval(50, 100)
+    assert 0 <= low_small < 0.5 < high_small <= 1
+    assert high_large - low_large < high_small - low_small
+
+
+def test_probability_counts_unresolved_horizon_as_not_correct(monkeypatch):
+    rows = []
+    for i in range(260):
+        rows.append({
+            "open_time": i * 300000, "open": 100.0, "high": 101.0,
+            "low": 99.0, "close": 100.0,
+        })
+    data = pd.DataFrame(rows)
+
+    def always_long(history, cfg):
+        return str(int(history.iloc[-1]["open_time"])), {
+            "direction": "LONG", "stop": 90.0, "target": 110.0,
+        }
+
+    monkeypatch.setattr("radar_engine.evaluate_radar", always_long)
+    result = estimate_probability_details(data, config(), "LONG")
+    assert result["samples"] == 36
+    assert result["wins"] == 0
+    assert result["probability"] == 0
+    assert result["ci_low"] == 0
+    assert result["ci_high"] is not None
