@@ -35,7 +35,7 @@ def _summarize(trades):
 
 
 def run_backtest(df, config, horizon=20, test_fraction=0.30,
-                 fee_bps_per_side=0.0, slippage_bps_per_side=0.0):
+                 fee_bps_per_side=0.0, slippage_bps_per_side=0.0, higher_df=None):
     """Evaluate only the final test_fraction of candles; earlier bars warm indicators.
 
     A missed TP/SL by the horizon is classified as a non-win and closed at the
@@ -52,7 +52,12 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
     trades = []
     i = first_test
     while i < len(df) - horizon:
-        _, signal = evaluate_radar(df.iloc[:i + 1], config)
+        history = df.iloc[:i + 1]
+        historical_higher = higher_df
+        if config.get("higher_timeframe", "none") != "none" and higher_df is not None:
+            cutoff = int(history.iloc[-1].get("close_time", history.iloc[-1]["open_time"]))
+            historical_higher = higher_df[higher_df["close_time"] <= cutoff]
+        _, signal = evaluate_radar(history, config, historical_higher)
         if not signal:
             i += 1
             continue
