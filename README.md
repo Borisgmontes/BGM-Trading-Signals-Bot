@@ -33,3 +33,12 @@ El radar utiliza velas cerradas de BTCUSDT desde el endpoint público spot de Bi
 La rama `feature/btc-radar` incluye una PWA para Android servida desde la raíz del servicio `web_worker.py`. El acceso está protegido por `DASHBOARD_PIN`. Si no hay `DATABASE_URL`, el dashboard funciona en memoria volátil para pruebas: la configuración, las señales y las suscripciones push se pierden al reiniciar/suspender la instancia. Para uso estable se requiere PostgreSQL persistente. Para notificaciones Push se requieren `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_CLAIMS_EMAIL`. Genera un par local en tu laptop con `pip install cryptography` y `python generate_vapid.py`; introduce ambas claves como variables privadas en Render y no las publiques. Añade también `DASHBOARD_PIN` y la `DATABASE_URL` de una base PostgreSQL gratuita separada. Instala la PWA desde Chrome y concede permiso de notificaciones. El botón de compartir abre el menú nativo de Android; el usuario elige WhatsApp y el grupo.
 
 **Probabilidad:** porcentaje histórico de configuraciones idénticas y misma dirección que alcanzaron TP antes de SL dentro de las siguientes 20 velas cerradas. Se calcula con hasta 1.000 velas; solo se muestra cuando existen al menos 30 ejemplos. Si la muestra es menor, se indica “en calibración”. No garantiza el resultado de la próxima señal. El dashboard no ejecuta órdenes.
+
+
+## Validación estadística y filtros avanzados
+
+- Se pueden activar confirmaciones avanzadas (ADX, VWAP, OBV, Stochastic, Supertrend, divergencias RSI, Fibonacci, patrones chartistas, FVG, Order Blocks y Fakeouts) tanto en el dashboard como en el asistente de Telegram.
+- El filtro opcional de temporalidad superior exige tendencia EMA20/EMA50/EMA200 alineada en una vela HTF ya cerrada. Debe ser una temporalidad mayor que la principal.
+- Las operaciones se cierran por TP/SL o al completar 20 velas cerradas; las no resueltas se contabilizan como no aciertos para mantener el mismo horizonte que la probabilidad histórica.
+- El dashboard calcula efectividad, profit factor, expectativa R por operación, promedio de R ganador/perdedor y drawdown máximo. Los resultados R actuales son brutos, no descuentan costes.
+- El botón de backtest evalúa el 30% más reciente como período fuera de muestra, evita posiciones solapadas y permite especificar costes por lado en la función de backtest. El dashboard aún usa coste cero por defecto; introduce las comisiones y el deslizamiento reales antes de interpretar rentabilidad neta.
