@@ -295,10 +295,12 @@ def scanner():
                 for row,cfg in items:
                     try:
                         if mode=="radar":
-                            cid,sig=evaluate_radar(df,cfg)
+                            higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+                                       if cfg.get("higher_timeframe","none") != "none" else None)
+                            cid,sig=evaluate_radar(df,cfg,higher_df)
                             formatter=format_radar_alert
                             if sig is not None:
-                                probability_stats=estimate_probability_details(df,cfg,sig["direction"])
+                                probability_stats=estimate_probability_details(df,cfg,sig["direction"],higher_df=higher_df)
                                 if not qualifies_by_historical_probability(probability_stats):
                                     log.info("Telegram radar candidate filtered: strategy=%s direction=%s probability=%s samples=%s minimum_strictly_above=35%%",
                                              row["name"],sig["direction"],probability_stats["probability"],probability_stats["samples"])
