@@ -11,6 +11,8 @@ function renderTrades(data){
  $("#trade-open").textContent=stats.open??0;
  $("#trade-pf").textContent=stats.profit_factor??"—";
  $("#trade-netr").textContent=(stats.net_r>0?"+":"")+(stats.net_r??0)+"R";
+ $("#trade-expectancy").textContent=stats.expectancy_r==null?"—":stats.expectancy_r+"R";
+ $("#trade-drawdown").textContent=(stats.max_drawdown_r??0)+"R";
  const root=$("#trades");
  root.innerHTML=rows.length?rows.map(t=>{
   const side=t.direction==="LONG"?"long":"short",result=t.result||"";
