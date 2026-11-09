@@ -112,3 +112,26 @@ def test_telegram_alert_uses_actual_newlines_not_literal_backslash_sequences():
     assert "\n" in message
     assert "\\n" not in message
     assert "Confirmaciones:\n" in message
+
+
+def test_higher_timeframe_filter_requires_strictly_higher_interval():
+    try:
+        validate_radar_config(config(higher_timeframe="5m"))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("The higher timeframe must be strictly higher than the signal timeframe")
+
+
+def test_long_signal_requires_aligned_closed_higher_timeframe():
+    base = frame("LONG")
+    base["close_time"] = base["open_time"] + 299999
+    higher = frame("LONG")
+    higher["close_time"] = higher["open_time"] + 299999
+    cfg = config(higher_timeframe="15m")
+    _, aligned = evaluate_radar(base, cfg, higher)
+    assert aligned is not None
+    bearish = frame("SHORT")
+    bearish["close_time"] = bearish["open_time"] + 899999
+    _, blocked = evaluate_radar(base, cfg, bearish)
+    assert blocked is None
