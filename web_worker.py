@@ -28,6 +28,12 @@ RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen
 RADAR_TFS=[("5 minutos","5m"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
 RADAR_HTFS=[("Sin filtro superior","none"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
 
+
+def radar_module_labels(modules):
+    """Return readable labels for radar module IDs, preserving unknown IDs safely."""
+    names = {value: label for label, value in RADAR_MODULES}
+    return [names.get(module, module) for module in modules]
+
 HELP="""🤖 BGM TRADING SIGNALS
 Usa los botones para configurar una estrategia sin escribir parámetros.
 
@@ -116,8 +122,7 @@ def show_radar_step(chat_id,uid,edit_message_id=None):
         for label,value in TARGETS:
             kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:target_r:{value}"))
     else:
-        names=dict(RADAR_MODULES)
-        chosen=", ".join(names[x] for x in cfg["modules"])
+        chosen=", ".join(radar_module_labels(cfg["modules"]))
         htf_label=dict(RADAR_HTFS).get(cfg.get("higher_timeframe","none"),"Sin filtro superior")
         text=("🧾 RESUMEN BTC RADAR\n\nActivo: BTCUSDT\nTemporalidad: "+cfg["timeframe"]+
               "\nConfirmación superior: "+htf_label+"\nIndicadores: "+chosen+"\nConfirmaciones mínimas: "+str(cfg["min_score"])+
