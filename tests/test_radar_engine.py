@@ -1,6 +1,6 @@
 import pandas as pd
 
-from radar_engine import (evaluate_radar, validate_radar_config, format_radar_alert, estimate_probability, estimate_probability_details, _wilson_interval)
+from radar_engine import (evaluate_radar, validate_radar_config, format_radar_alert, estimate_probability, estimate_probability_details, _wilson_interval, qualifies_by_historical_probability)
 
 
 def config(**overrides):
@@ -96,3 +96,10 @@ def test_probability_counts_unresolved_horizon_as_not_correct(monkeypatch):
     assert result["probability"] == 0
     assert result["ci_low"] == 0
     assert result["ci_high"] is not None
+
+
+def test_probability_gate_requires_strictly_more_than_35_percent():
+    assert qualifies_by_historical_probability({"probability": 36, "samples": 100}) is True
+    assert qualifies_by_historical_probability({"probability": 35, "samples": 100}) is False
+    assert qualifies_by_historical_probability({"probability": 14, "samples": 118}) is False
+    assert qualifies_by_historical_probability({"probability": None, "samples": 29}) is False
