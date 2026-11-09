@@ -83,7 +83,7 @@ def test_auto_tracker_expires_unresolved_signal_after_twenty_closed_candles(monk
         "entry":100.0,"stop":98.0,"target":104.0,"status":"CONFIRMED","result":None,
     })
     candles=pd.DataFrame([
-        {"open_time":600000+i*300000,"high":101.0,"low":99.0}
+        {"open_time":600000+i*300000,"high":101.0,"low":99.0,"close":99.5}
         for i in range(20)
     ])
     closed=api.track_open_signals(candles,"5m")
@@ -91,6 +91,8 @@ def test_auto_tracker_expires_unresolved_signal_after_twenty_closed_candles(monk
     assert api._MEM_SIGNALS[0]["result"]=="LOSS"
     assert api._MEM_SIGNALS[0]["result_reason"]=="HORIZON_EXPIRED"
     assert api._MEM_SIGNALS[0]["status"]=="CLOSED"
+    assert api._MEM_SIGNALS[0]["exit_price"]==99.5
+    assert api.list_trades()["stats"]["net_r"]==-0.25
 
 
 def test_auto_tracker_does_not_expire_before_twenty_closed_candles(monkeypatch):
