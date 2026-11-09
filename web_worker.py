@@ -5,7 +5,7 @@ from telebot import types
 import user_store
 import dashboard_api
 from strategy_engine import validate_config, fetch_candles, evaluate, format_alert
-from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert, estimate_probability_details, qualifies_by_historical_probability
+from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert, estimate_probability_details, qualifies_by_historical_probability, TF_MINUTES
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO"))
 log=logging.getLogger("BGM")
@@ -26,6 +26,7 @@ RISKS=[("0,25%","0.25"),("0,5%","0.5"),("1%","1.0"),("2%","2.0")]
 STEPS=[("symbol","Elige el activo",ASSETS),("timeframe","Elige la temporalidad",TFS),("entry","Elige el tipo de entrada",ENTRIES),("trend","Filtro de tendencia",TRENDS),("confirmation","Confirmación adicional",CONFIRMS),("stop","Cómo calcular el Stop Loss",STOPS),("target_r","Objetivo de beneficio",TARGETS),("risk_pct","Riesgo nominal por operación",RISKS)]
 RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen","volume"),("ATR","atr"),("Bandas Bollinger","bollinger"),("Barrido de liquidez","liquidity"),("BOS","bos"),("ADX","adx"),("VWAP","vwap"),("OBV","obv"),("Stochastic","stochastic"),("Supertrend","supertrend"),("Divergencias RSI","divergence"),("Fibonacci","fibonacci"),("Patrones chartistas","chart_patterns"),("Fair Value Gaps","fvg"),("Order Blocks","order_blocks"),("Fakeouts","fakeout")]
 RADAR_TFS=[("5 minutos","5m"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
+RADAR_HTFS=[("Sin filtro superior","none"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
 
 HELP="""🤖 BGM TRADING SIGNALS
 Usa los botones para configurar una estrategia sin escribir parámetros.
@@ -106,15 +107,21 @@ def show_radar_step(chat_id,uid,edit_message_id=None):
         for n in range(1,len(cfg["modules"])+1):
             kb.add(types.InlineKeyboardButton(str(n)+" confirmaciones",callback_data=f"radar:set:min_score:{n}"))
     elif step==3:
-        text="📡 BTC RADAR (4/4)\n\nSelecciona objetivo teórico:"
+        text="📡 BTC RADAR (4/5)\\n\\nFiltro de tendencia de una temporalidad superior:"
+        for label,value in RADAR_HTFS:
+            if value=="none" or TF_MINUTES[value] > TF_MINUTES[cfg["timeframe"]]:
+                kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:higher_timeframe:{value}"))
+    elif step==4:
+        text="📡 BTC RADAR (5/5)\\n\\nSelecciona objetivo teórico:"
         for label,value in TARGETS:
             kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:target_r:{value}"))
     else:
         names=dict(RADAR_MODULES)
         chosen=", ".join(names[x] for x in cfg["modules"])
-        text=("🧾 RESUMEN BTC RADAR\n\nActivo: BTCUSDT\nTemporalidad: "+cfg["timeframe"]+
-              "\nIndicadores: "+chosen+"\nConfirmaciones mínimas: "+str(cfg["min_score"])+
-              "\nObjetivo teórico: "+str(cfg["target_r"])+"R\n\nGuardar y activar el radar?")
+        htf_label=dict(RADAR_HTFS).get(cfg.get("higher_timeframe","none"),"Sin filtro superior")
+        text=("🧾 RESUMEN BTC RADAR\\n\\nActivo: BTCUSDT\\nTemporalidad: "+cfg["timeframe"]+
+              "\\nConfirmación superior: "+htf_label+"\\nIndicadores: "+chosen+"\\nConfirmaciones mínimas: "+str(cfg["min_score"])+
+              "\\nObjetivo teórico: "+str(cfg["target_r"])+"R\\n\\nGuardar y activar el radar?")
         kb.add(types.InlineKeyboardButton("💾 Guardar y activar",callback_data="radar:save"))
     kb.add(types.InlineKeyboardButton("✖️ Cancelar",callback_data="wizard:cancel"))
     if edit_message_id:
@@ -175,7 +182,7 @@ if bot:
             if data=="test:sim":
                 bot.send_message(chat_id,"🧪 ALERTA DE PRUEBA — SIMULADA\nBTCUSDT LONG\nEntrada, SL y TP ficticios. No es señal real de mercado.",reply_markup=main_keyboard()); return
             if data=="radar:start":
-                WIZARDS[uid]={"radar":True,"step":0,"config":{"symbol":"BTCUSDT","modules":[x[1] for x in RADAR_MODULES],"target_r":2.0}}
+                WIZARDS[uid]={"radar":True,"step":0,"config":{"symbol":"BTCUSDT","modules":[x[1] for x in RADAR_MODULES],"higher_timeframe":"none","target_r":2.0}}
                 show_radar_step(chat_id,uid,c.message.message_id); return
             if data.startswith("radar:"):
                 w=WIZARDS.get(uid)
@@ -194,7 +201,8 @@ if bot:
                     _,_,key,value=data.split(":",3)
                     if key=="timeframe": w["config"][key]=value; w["step"]=1
                     elif key=="min_score": w["config"][key]=int(value); w["step"]=3
-                    elif key=="target_r": w["config"][key]=float(value); w["step"]=4
+                    elif key=="higher_timeframe": w["config"][key]=value; w["step"]=4
+                    elif key=="target_r": w["config"][key]=float(value); w["step"]=5
                     show_radar_step(chat_id,uid,c.message.message_id); return
                 if data=="radar:save":
                     cfg=dict(w["config"]); cfg["mode"]="radar"; cfg["name"]="BTC_RADAR_"+cfg["timeframe"]
