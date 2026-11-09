@@ -104,3 +104,11 @@ def test_probability_gate_requires_strictly_more_than_35_percent():
     assert qualifies_by_historical_probability({"probability": 35.3, "wins": 106, "samples": 300}) is True
     assert qualifies_by_historical_probability({"probability": 14.4, "wins": 17, "samples": 118}) is False
     assert qualifies_by_historical_probability({"probability": None, "wins": 0, "samples": 29}) is False
+
+
+def test_telegram_alert_uses_actual_newlines_not_literal_backslash_sequences():
+    signal = evaluate_radar(frame("LONG"), config())[1]
+    message = format_radar_alert(signal)
+    assert "\n" in message
+    assert "\\n" not in message
+    assert "Confirmaciones:\n" in message
