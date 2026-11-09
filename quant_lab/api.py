@@ -6,6 +6,9 @@ from datetime import timezone
 import pandas as pd
 import math
 from flask import Flask, jsonify, request
+import hmac
+import os
+from . import analytics_store
 from .data import fetch_btc_candles
 from .indicators import add_indicators, normalize_indicator_settings
 from .ranking import score_candidate, score_training_candidate
@@ -18,6 +21,7 @@ from .nlp import interpret_strategy
 app = Flask(__name__)
 ALLOWED_ORIGINS = {
     "https://bgm-quant-lab.onrender.com",
+    "https://bgm-quant-lab-demo.onrender.com",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 }
@@ -299,3 +303,40 @@ def multi_backtest():
     except Exception as exc:
         app.logger.exception("Multi-asset backtest failed")
         return jsonify({"ok": False, "error": str(exc)[:500]}), 502
+
+
+# Anonymous product analytics. Separate PostgreSQL tables; no trading or Radar data.
+@app.route("/api/analytics/event", methods=["POST", "OPTIONS"])
+def analytics_event():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if not analytics_store.is_configured():
+        return jsonify({"ok": False, "error": "Analytics storage is not configured."}), 503
+    try:
+        payload = request.get_json(silent=True) or {}
+        analytics_store.record_event(payload)
+        return jsonify({"ok": True}), 202
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Analytics event could not be stored")
+        return jsonify({"ok": False, "error": "Analytics storage unavailable."}), 503
+
+@app.get("/api/analytics/report")
+def analytics_report():
+    expected = os.getenv("QUANT_ADMIN_TOKEN", "")
+    supplied = request.headers.get("Authorization", "")
+    if not expected:
+        return jsonify({"ok": False, "error": "Admin access is not configured."}), 503
+    if not hmac.compare_digest(supplied, "Bearer " + expected):
+        return jsonify({"ok": False, "error": "Unauthorized."}), 401
+    if not analytics_store.is_configured():
+        return jsonify({"ok": False, "error": "Analytics storage is not configured."}), 503
+    try:
+        days = int(request.args.get("days", "1"))
+        return jsonify(analytics_store.daily_report(days))
+    except (ValueError, TypeError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Analytics report failed")
+        return jsonify({"ok": False, "error": "Analytics report unavailable."}), 503
