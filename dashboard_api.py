@@ -192,13 +192,27 @@ def list_trades():
             reward = abs(float(x["target"]) - float(x["entry"]))
             multiple = reward / risk if risk else 0.0
             r_values.append(multiple if x["result"] == "WIN" else -1.0)
-        gp = sum(v for v in r_values if v > 0)
-        gl = abs(sum(v for v in r_values if v < 0))
-        return {"total": len(rows), "wins": wins, "losses": losses,
-                "open": sum(x.get("status") == "CONFIRMED" for x in rows),
-                "win_rate": round(100 * wins / closed, 1) if closed else None,
-                "profit_factor": round(gp / gl, 2) if gl else (None if not gp else "∞"),
-                "net_r": round(sum(r_values), 2), "closed": closed}
+        gross_profit = sum(v for v in r_values if v > 0)
+        gross_loss = abs(sum(v for v in r_values if v < 0))
+        equity = peak = max_drawdown = 0.0
+        for value in r_values:
+            equity += value
+            peak = max(peak, equity)
+            max_drawdown = max(max_drawdown, peak - equity)
+        win_values = [v for v in r_values if v > 0]
+        loss_values = [v for v in r_values if v < 0]
+        return {
+            "total": len(rows), "wins": wins, "losses": losses,
+            "open": sum(x.get("status") in ("CANDIDATE", "CONFIRMED", "OPEN") for x in rows),
+            "win_rate": round(100 * wins / closed, 1) if closed else None,
+            "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss else (None if not gross_profit else "∞"),
+            "net_r": round(sum(r_values), 2),
+            "expectancy_r": round(sum(r_values) / closed, 3) if closed else None,
+            "average_win_r": round(sum(win_values) / len(win_values), 3) if win_values else None,
+            "average_loss_r": round(sum(loss_values) / len(loss_values), 3) if loss_values else None,
+            "max_drawdown_r": round(max_drawdown, 2),
+            "closed": closed,
+        }
 
     current = [x for x in all_rows if x.get("strategy_hash") == active_hash and int(x.get("stats_epoch", 0)) == epoch]
     grouped = {}
@@ -227,42 +241,70 @@ def open_signal_timeframes():
     return [r["timeframe"] for r in rows]
 
 
-def track_open_signals(df,timeframe):
-    candles=df.to_dict("records"); closed=[]
+def track_open_signals(df,timeframe,horizon=20):
+    """Close signals at TP/SL, or at the same 20-closed-candle horizon used by backtests."""
+    candles=df.to_dict("records")
+    closed=[]
+    timeframe_ms={"5m":300000,"15m":900000,"1h":3600000,"4h":14400000}.get(timeframe)
+    if not timeframe_ms:
+        raise ValueError("Temporalidad no válida para seguimiento.")
+    horizon_ms=timeframe_ms*int(horizon)
+
+    def outcome_for(item,candle,entry_ms):
+        result,reason=resolve_directional_outcome(
+            item["direction"],candle["high"],candle["low"],item["stop"],item["target"]
+        )
+        candle_ms=int(candle["open_time"])
+        if result is None and candle_ms-entry_ms >= horizon_ms:
+            return "LOSS","HORIZON_EXPIRED"
+        return result,reason
+
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
-            if item.get("status") not in ("CANDIDATE","CONFIRMED") or item.get("result") or item.get("timeframe")!=timeframe: continue
-            try: entry_ms=int(item["candle_id"])
-            except (TypeError,ValueError): continue
+            if item.get("status") not in ("CANDIDATE","CONFIRMED") or item.get("result") or item.get("timeframe")!=timeframe:
+                continue
+            try:
+                entry_ms=int(item["candle_id"])
+            except (TypeError,ValueError):
+                continue
+            last_checked=int(item.get("last_checked_candle") or entry_ms)
             for candle in candles:
-                if int(candle["open_time"])<=entry_ms: continue
-                result,reason=resolve_directional_outcome(item["direction"],candle["high"],candle["low"],item["stop"],item["target"])
+                candle_ms=int(candle["open_time"])
+                if candle_ms<=max(entry_ms,last_checked):
+                    continue
+                result,reason=outcome_for(item,candle,entry_ms)
+                item["last_checked_candle"]=candle_ms
                 if result:
                     item.update({"status":"CLOSED","result":result,"result_reason":reason,"closed_at":_utc_now()})
-                    closed.append(dict(item)); break
+                    closed.append(dict(item))
+                    break
         return closed
+
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,direction,stop,target,last_checked_candle
           FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL AND timeframe=%s ORDER BY id""",(timeframe,)).fetchall()
         for row in rows:
-            try: entry_ms=int(row["candle_id"])
-            except (TypeError,ValueError): continue
+            try:
+                entry_ms=int(row["candle_id"])
+            except (TypeError,ValueError):
+                continue
             last_checked=int(row["last_checked_candle"] or entry_ms)
             for candle in candles:
                 candle_ms=int(candle["open_time"])
-                if candle_ms<=max(entry_ms,last_checked): continue
-                result,reason=resolve_directional_outcome(row["direction"],candle["high"],candle["low"],row["stop"],row["target"])
+                if candle_ms<=max(entry_ms,last_checked):
+                    continue
+                result,reason=outcome_for(row,candle,entry_ms)
                 if result:
                     updated=conn.execute("""UPDATE bgm_dashboard_signals SET status='CLOSED',result=%s,result_reason=%s,
                       closed_at=now(),last_checked_candle=%s WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL
                       RETURNING id,result,result_reason""",(result,reason,candle_ms,row["id"])).fetchone()
-                    if updated: closed.append(dict(updated))
+                    if updated:
+                        closed.append(dict(updated))
                     break
                 last_checked=candle_ms
             conn.execute("""UPDATE bgm_dashboard_signals SET last_checked_candle=%s
               WHERE id=%s AND status IN ('CANDIDATE','CONFIRMED') AND result IS NULL""",(last_checked,row["id"]))
     return closed
-
 
 def update_signal(signal_id,status):
     if status not in ("CONFIRMED","DISCARDED"): raise ValueError("Estado no válido.")
