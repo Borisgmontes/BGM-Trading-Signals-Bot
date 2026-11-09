@@ -192,9 +192,11 @@ def list_trades():
     grouped = {}
     for row in all_rows:
         grouped.setdefault(row.get("strategy_hash") or "legacy", []).append(row)
+    grouped.setdefault(active_hash, [])
     strategies = []
     for key, rows in grouped.items():
-        strategies.append({"strategy_hash": key, "config": rows[0].get("config_snapshot") or {},
+        snapshot = (rows[0].get("config_snapshot") or {}) if rows else cfg
+        strategies.append({"strategy_hash": key, "config": snapshot,
                            "stats": summarize(rows), "is_current": key == active_hash})
     strategies.sort(key=lambda x: (not x["is_current"], -x["stats"]["total"]))
     return {"trades": current[-500:], "stats": summarize(current),
