@@ -110,6 +110,7 @@
     try{const description=$('description').value.trim();if(!description)throw Error('Escribe primero una descripción.');
       const res=await fetch(API+'/api/interpret',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description,name:$('strategyName').value})});
       const data=await res.json();if(!res.ok||!data.ok)throw Error(data.error||'No se pudo interpretar el texto.');
+      document.dispatchEvent(new Event('bgm:strategy-interpreted'));
       ['long','short'].forEach(k=>state.rules[k].push(...data.strategy[k+'_conditions'].map(x=>({...x,timeframe:$('timeframe').value}))));
       renderRules();status('Reglas del texto combinadas. Selecciona la temporalidad adecuada para cada condición.');
     }catch(e){status(e.message,true)}
@@ -128,7 +129,7 @@
       const unchanged=old&&JSON.stringify(old.strategy)===JSON.stringify(p.strategy)&&JSON.stringify(old.config)===JSON.stringify(savedConfig);
       const item={id,name:p.strategy.name,saved_at:old?.saved_at||new Date().toISOString(),strategy:p.strategy,
         config:savedConfig,last_result:unchanged?old.last_result:null};
-      save([item,...items.filter(x=>x.id!==id)]);state.active=id;renderLibrary();status('Estrategia guardada en la biblioteca local.');
+      save([item,...items.filter(x=>x.id!==id)]);state.active=id;renderLibrary();document.dispatchEvent(new Event('bgm:strategy-saved'));status('Estrategia guardada en la biblioteca local.');
     }catch(e){status(e.message,true)}
   }
   function renderLibrary(){
@@ -160,7 +161,7 @@
     let p;try{p=config()}catch(e){status(e.message,true);return}const button=$('runVisual');button.disabled=true;status('Descargando velas reales de las temporalidades solicitadas…');
     try{const res=await fetch(API+'/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const data=await res.json();
       if(!res.ok||!data.ok)throw Error(data.error||'El motor no pudo completar el backtest.');
-      showResult(data.out_of_sample);const items=load(),id=state.active||'visual-'+Date.now(),old=items.find(x=>x.id===id);
+      showResult(data.out_of_sample);document.dispatchEvent(new CustomEvent('bgm:backtest-completed',{detail:{timeframe:p.timeframe,market:'BTCUSDT',trades:data.out_of_sample.trades,net_return_pct:data.out_of_sample.net_return_pct,status:'success'}}));const items=load(),id=state.active||'visual-'+Date.now(),old=items.find(x=>x.id===id);
       const item={id,name:p.strategy.name,saved_at:old?.saved_at||new Date().toISOString(),strategy:p.strategy,
         config:{timeframe:p.timeframe,candles:p.candles,initial_equity:p.initial_equity,fee_bps:p.fee_bps,slippage_bps:p.slippage_bps},
         last_result:{net_return_pct:data.out_of_sample.net_return_pct,win_rate_pct:data.out_of_sample.win_rate_pct,profit_factor:data.out_of_sample.profit_factor,trades:data.out_of_sample.trades,max_drawdown_pct:data.out_of_sample.max_drawdown_pct,data_start:data.data_start,data_end:data.data_end}};
