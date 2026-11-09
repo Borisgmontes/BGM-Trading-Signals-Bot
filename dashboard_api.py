@@ -254,13 +254,28 @@ def update_signal(signal_id,status):
     if status not in ("CONFIRMED","DISCARDED"): raise ValueError("Estado no válido.")
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
-            if str(item["id"])==str(signal_id) and item["status"]=="CANDIDATE":
-                item["status"]=status; item["confirmed_at"]=_utc_now() if status=="CONFIRMED" else None
+            if str(item["id"]) == str(signal_id) and item["status"] == "CANDIDATE":
+                item["status"] = status
+                item["confirmed_at"] = _utc_now() if status == "CONFIRMED" else None
+                if status == "CONFIRMED":
+                    key = item.get("strategy_hash")
+                    if key:
+                        item["stats_epoch"] = _current_epoch(key)
                 return True
         return False
     with _db() as conn:
-        cur=conn.execute("UPDATE bgm_dashboard_signals SET status=%s WHERE id=%s AND status='CANDIDATE'",(status,int(signal_id)))
-        return cur.rowcount>0
+        row = conn.execute("""SELECT strategy_hash FROM bgm_dashboard_signals
+          WHERE id=%s AND status='CANDIDATE'""", (int(signal_id),)).fetchone()
+        if not row:
+            return False
+        epoch = 0
+        if status == "CONFIRMED" and row["strategy_hash"]:
+            state = conn.execute("SELECT epoch FROM bgm_dashboard_strategy_state WHERE strategy_hash=%s",
+                                 (row["strategy_hash"],)).fetchone()
+            epoch = int(state["epoch"]) if state else 0
+        cur = conn.execute("""UPDATE bgm_dashboard_signals SET status=%s,stats_epoch=%s
+          WHERE id=%s AND status='CANDIDATE'""", (status, epoch, int(signal_id)))
+        return cur.rowcount > 0
 
 def save_subscription(sub):
     endpoint=sub.get("endpoint")
