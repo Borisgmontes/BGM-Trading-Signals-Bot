@@ -3,7 +3,7 @@ import json, os, hmac, logging, base64, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
-from radar_engine import validate_radar_config
+from radar_engine import validate_radar_config, qualifies_by_historical_probability
 from signal_tracker import resolve_directional_outcome
 import psycopg
 from psycopg.rows import dict_row
@@ -388,6 +388,10 @@ def scan_dashboard():
                      cfg["timeframe"],len(df),candle_time,price)
             return
         probability_stats=estimate_probability_details(df,cfg,signal["direction"])
+        if not qualifies_by_historical_probability(probability_stats):
+            log.info("Dashboard candidate filtered: tf=%s direction=%s probability=%s samples=%s minimum_strictly_above=35%%",
+                     cfg["timeframe"],signal["direction"],probability_stats["probability"],probability_stats["samples"])
+            return
         signal["probability"] = probability_stats["probability"]
         signal["probability_samples"] = probability_stats["samples"]
         signal["probability_wins"] = probability_stats["wins"]
