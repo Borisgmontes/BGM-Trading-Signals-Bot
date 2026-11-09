@@ -64,6 +64,11 @@
       <div id="signals" class="signals"><div class="empty">Esperando la primera señal candidata…</div></div>
       <section class="section-head signal-heading"><div><p class="eyebrow">SEGUIMIENTO</p><h2>Operaciones confirmadas</h2></div><button id="refresh-trades" class="icon-button" aria-label="Actualizar operaciones">↻</button></section>
       <section class="panel trades-panel">
+        <div class="strategy-current">
+          <small>COMBINACIÓN ACTIVA</small>
+          <strong id="strategy-id">Calculando configuración…</strong>
+          <small id="strategy-epoch">Período estadístico 1</small>
+        </div>
         <div class="trade-stats">
           <div><small>OPERACIONES</small><strong id="trade-total">0</strong></div>
           <div><small>GANADAS</small><strong id="trade-wins" class="long">0</strong></div>
@@ -73,8 +78,14 @@
           <div><small>PROFIT FACTOR</small><strong id="trade-pf">—</strong></div>
           <div><small>RESULTADO (R)</small><strong id="trade-netr">0</strong></div>
         </div>
+        <div class="trade-actions"><button id="reset-stats" class="secondary">Reiniciar contador de esta combinación</button></div>
         <div id="trades" class="trades"><div class="empty">Las señales que confirmes aparecerán aquí para registrar su resultado.</div></div>
+        <div class="strategy-history">
+          <h3>Historial de combinaciones</h3>
+          <div id="strategy-history" class="trades"><div class="empty">Aún no hay combinaciones anteriores registradas.</div></div>
+        </div>
       </section>
+      <p class="disclaimer">Costes Weltrade Pro configurados: comisión $0; contrato 1 BTC/lote; spread flotante. Swaps LONG/SHORT: -20% anual informado, triple el viernes. El coste exacto del spread se tomará del Bid/Ask; el swap neto queda pendiente de confirmar su base de cálculo.</p>
       <p class="disclaimer">El radar sigue las señales confirmadas y marca automáticamente TP o SL. Las señales permanecen abiertas sin fecha de caducidad hasta tocar uno de esos niveles.</p>
       <p class="disclaimer">La probabilidad mostrada deberá estar calibrada con backtesting; no es una garantía de resultado.</p>
     </section>
