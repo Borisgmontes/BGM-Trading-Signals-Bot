@@ -194,3 +194,11 @@ def estimate_probability_details(df, config, direction, horizon=20, min_samples=
 def estimate_probability(df, config, direction, horizon=20, min_samples=30):
     """Backward-compatible percentage accessor for historical TP-before-SL frequency."""
     return estimate_probability_details(df, config, direction, horizon, min_samples)["probability"]
+
+
+MIN_HISTORICAL_PROBABILITY = 35
+
+def qualifies_by_historical_probability(stats, minimum=MIN_HISTORICAL_PROBABILITY):
+    """Only admit signals whose historical TP-before-SL rate is strictly above minimum."""
+    probability = stats.get("probability") if isinstance(stats, dict) else None
+    return probability is not None and float(probability) > float(minimum)
