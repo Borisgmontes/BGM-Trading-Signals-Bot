@@ -196,7 +196,10 @@ def estimate_probability_details(df, config, direction, horizon=20, min_samples=
                 continue
             cutoff = int(history.iloc[-1].get("close_time", history.iloc[-1]["open_time"]))
             historical_higher = higher_df[higher_df["close_time"] <= cutoff]
-        _, historical = evaluate_radar(history, config, historical_higher)
+        if config.get("higher_timeframe", "none") != "none":
+            _, historical = evaluate_radar(history, config, historical_higher)
+        else:
+            _, historical = evaluate_radar(history, config)
         if not historical or historical["direction"] != direction:
             continue
         future = df.iloc[i + 1:i + horizon + 1]
