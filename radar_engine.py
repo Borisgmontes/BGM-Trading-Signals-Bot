@@ -135,11 +135,15 @@ def format_radar_alert(signal):
     side = "🟢 LONG" if signal["direction"] == "LONG" else "🔴 SHORT"
     confirmations = "\\n".join("• " + item for item in signal["confirmations"])
     created = signal.get("created_at", signal["candle_id"])
+    probability = signal.get("probability")
+    probability_line = (f"Probabilidad histórica: {probability}% · n={signal.get('probability_samples', '—')}\\n"
+                        if probability is not None else "")
     return (
         "📡 BTC RADAR — BGM SIGNALS\\n\\n"
         f"{side} | {signal['symbol']} | {signal['timeframe']}\\n"
         f"Fecha y hora UTC: {created}\\n"
-        f"Confluencias: {signal['score']}/{signal['maximum']}\\n\\n"
+        f"Confluencias: {signal['score']}/{signal['maximum']}\\n"
+        f"{probability_line}\\n"
         f"Entrada: {signal['entry']:.8g}\\nStop Loss: {signal['stop']:.8g}\\n"
         f"Take Profit: {signal['target']:.8g}\\nObjetivo teórico: {signal['rr']:.1f}R\\n\\n"
         f"Confirmaciones:\\n{confirmations}\\n"
