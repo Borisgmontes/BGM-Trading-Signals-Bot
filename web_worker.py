@@ -5,7 +5,7 @@ from telebot import types
 import user_store
 import dashboard_api
 from strategy_engine import validate_config, fetch_candles, evaluate, format_alert
-from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert
+from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert, estimate_probability_details, qualifies_by_historical_probability
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO"))
 log=logging.getLogger("BGM")
@@ -297,6 +297,14 @@ def scanner():
                         if mode=="radar":
                             cid,sig=evaluate_radar(df,cfg)
                             formatter=format_radar_alert
+                            if sig is not None:
+                                probability_stats=estimate_probability_details(df,cfg,sig["direction"])
+                                if not qualifies_by_historical_probability(probability_stats):
+                                    log.info("Telegram radar candidate filtered: strategy=%s direction=%s probability=%s samples=%s minimum_strictly_above=35%%",
+                                             row["name"],sig["direction"],probability_stats["probability"],probability_stats["samples"])
+                                    continue
+                                sig["probability"]=probability_stats["probability"]
+                                sig["probability_samples"]=probability_stats["samples"]
                         else:
                             cid,sig=evaluate(df,cfg)
                             formatter=format_alert
