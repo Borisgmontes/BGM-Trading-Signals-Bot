@@ -81,6 +81,11 @@
           <div><small>DRAWDOWN MÁX. (R)</small><strong id="trade-drawdown">0</strong></div>
         </div>
         <p class="muted">Estadísticas basadas en señales confirmadas/candidatas cerradas por TP, SL o vencimiento a 20 velas. Resultado bruto: no descuenta comisiones ni deslizamiento.</p>
+        <div class="strategy-current">
+          <div class="section-head"><strong>Backtest fuera de muestra</strong><button id="run-backtest" class="secondary">Ejecutar backtest</button></div>
+          <small>Evalúa el 30% más reciente de las velas disponibles, sin operaciones solapadas. Los costes están en cero hasta configurar los de tu intermediario.</small>
+          <div id="backtest-result" class="trade-meta">Aún no se ha ejecutado un backtest.</div>
+        </div>
         <div class="trade-actions"><button id="reset-stats" class="secondary">Reiniciar contador de esta combinación</button></div>
         <div id="trades" class="trades"><div class="empty">Las señales que confirmes aparecerán aquí para registrar su resultado.</div></div>
         <div class="strategy-history">
