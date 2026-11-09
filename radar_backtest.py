@@ -57,7 +57,10 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
         if config.get("higher_timeframe", "none") != "none" and higher_df is not None:
             cutoff = int(history.iloc[-1].get("close_time", history.iloc[-1]["open_time"]))
             historical_higher = higher_df[higher_df["close_time"] <= cutoff]
-        _, signal = evaluate_radar(history, config, historical_higher)
+        if config.get("higher_timeframe", "none") != "none":
+            _, signal = evaluate_radar(history, config, historical_higher)
+        else:
+            _, signal = evaluate_radar(history, config)
         if not signal:
             i += 1
             continue
