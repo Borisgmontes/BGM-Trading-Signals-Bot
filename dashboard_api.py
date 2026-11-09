@@ -527,6 +527,13 @@ def handle(handler):
                       RETURNING epoch""", (config_hash,)).fetchone()
                     new_epoch = int(row["epoch"])
             _json(handler,200,{"ok":True,"strategy_hash":config_hash,"stats_epoch":new_epoch})
+        elif path=="/api/dashboard/backtest" and handler.command=="POST":
+            from radar_engine import fetch_radar_candles
+            from radar_backtest import run_backtest
+            cfg=get_settings()
+            df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
+            report=run_backtest(df,cfg,horizon=20,test_fraction=0.30)
+            _json(handler,200,report)
         elif path=="/api/dashboard/status" and handler.command=="GET":
             _json(handler,200,{"scan":scan_status(),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL","").strip() else "memory_volatile"})
         elif path=="/api/dashboard/push-key" and handler.command=="GET":
