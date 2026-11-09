@@ -181,7 +181,8 @@ $('clearComparisons').addEventListener('click',()=>{localStorage.removeItem(RESU
 ['strategyName','description','timeframe','candles','initialEquity','feeBps','slippageBps','stopAtr','rewardRisk','riskPct','maxHolding'].forEach(id=>{ $(id).addEventListener('input',markDirty); $(id).addEventListener('change',markDirty); });
 try{const saved=JSON.parse(localStorage.getItem(CONFIG_KEY)||'null');if(saved){applySnapshot(saved);savedSignature=signature();setStatus('Última configuración guardada restaurada. Pulsa Interpretar reglas.','ok')}}catch(e){}
 renderLibrary();renderComparisons();checkApi();
-</script><script src="builder-v2.js" defer></script>
+</script><script src="analytics.js" defer></script>
+<script src="builder-v2.js" defer></script>
 <script>
 (()=> {
  const nav=[['dashboard','⌂','Dashboard'],['strategy-builder','▧','Estrategias'],['backtest','▤','Backtesting'],['validation','◈','Validación'],['comparisons','▥','Resultados'],['library','▣','Biblioteca'],['help','?','Ayuda']];
