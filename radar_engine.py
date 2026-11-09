@@ -5,6 +5,7 @@ from radar_advanced import ADVANCED_MODULES, add_advanced_indicators, advanced_c
 
 BASE_URL = "https://api.binance.us/api/v3/klines"
 ALLOWED_TF = {"5m", "15m", "1h", "4h"}
+TF_MINUTES = {"5m": 5, "15m": 15, "1h": 60, "4h": 240}
 BASE_MODULES = {"trend", "rsi", "macd", "volume", "atr", "bollinger", "liquidity", "bos"}
 MODULES = BASE_MODULES | ADVANCED_MODULES
 
@@ -20,6 +21,10 @@ def validate_radar_config(config):
     score = int(config.get("min_score", 3))
     if score < 1 or score > len(modules):
         raise ValueError("Las confirmaciones mínimas deben estar entre 1 y los módulos activos.")
+    higher_tf = config.get("higher_timeframe", "none")
+    if higher_tf != "none":
+        if higher_tf not in ALLOWED_TF or TF_MINUTES[higher_tf] <= TF_MINUTES[config["timeframe"]]:
+            raise ValueError("La confirmación superior debe usar una temporalidad mayor.")
     rr = float(config.get("target_r", 2.0))
     if rr not in (1.5, 2.0, 3.0):
         raise ValueError("Objetivo permitido: 1.5R, 2R o 3R.")
@@ -36,7 +41,7 @@ def fetch_radar_candles(symbol, timeframe, limit=1000):
     cols = ["open_time", "open", "high", "low", "close", "volume", "close_time",
             "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore"]
     df = pd.DataFrame(rows, columns=cols)
-    for col in ("open", "high", "low", "close", "volume", "open_time"):
+    for col in ("open", "high", "low", "close", "volume", "open_time", "close_time"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna().iloc[:-1].reset_index(drop=True)
     for period in (20, 50, 200):
@@ -65,8 +70,8 @@ def fetch_radar_candles(symbol, timeframe, limit=1000):
     return df.dropna().reset_index(drop=True)
 
 
-def evaluate_radar(df, config):
-    """Score enabled confirmations on the latest fully closed candle."""
+def evaluate_radar(df, config, higher_df=None):
+    """Score enabled confirmations on closed candles, optionally requiring HTF trend alignment."""
     if len(df) < 205:
         return None, None
     cur, prev = df.iloc[-1], df.iloc[-2]
@@ -104,6 +109,21 @@ def evaluate_radar(df, config):
     adv_long, adv_short, meta = advanced_checks(df, advanced)
     long_checks.update(adv_long)
     short_checks.update(adv_short)
+    higher_tf = config.get("higher_timeframe", "none")
+    if higher_tf != "none":
+        if higher_df is None or higher_df.empty or "close_time" not in higher_df.columns:
+            return str(int(cur["open_time"])), None
+        cutoff = int(cur.get("close_time", cur["open_time"]))
+        eligible = higher_df[higher_df["close_time"] <= cutoff]
+        if eligible.empty:
+            return str(int(cur["open_time"])), None
+        htf = eligible.iloc[-1]
+        long_checks["Tendencia temporalidad superior"] = (
+            float(htf["close"]) > float(htf["ema200"]) and float(htf["ema20"]) > float(htf["ema50"])
+        )
+        short_checks["Tendencia temporalidad superior"] = (
+            float(htf["close"]) < float(htf["ema200"]) and float(htf["ema20"]) < float(htf["ema50"])
+        )
     long_score, short_score = sum(bool(v) for v in long_checks.values()), sum(bool(v) for v in short_checks.values())
     minimum = int(config["min_score"])
     direction = "LONG" if long_score >= minimum and long_score > short_score else (
@@ -163,13 +183,20 @@ def _wilson_interval(wins, samples, z=1.96):
     return max(0.0, center - margin), min(1.0, center + margin)
 
 
-def estimate_probability_details(df, config, direction, horizon=20, min_samples=30):
+def estimate_probability_details(df, config, direction, horizon=20, min_samples=30, higher_df=None):
     """Estimate TP-before-SL within horizon candles; unresolved cases count as non-wins."""
     if len(df) < 205 + horizon:
         return {"probability": None, "samples": 0, "wins": 0, "ci_low": None, "ci_high": None}
     wins, samples = 0, 0
     for i in range(204, len(df) - horizon):
-        _, historical = evaluate_radar(df.iloc[:i + 1], config)
+        history = df.iloc[:i + 1]
+        historical_higher = higher_df
+        if config.get("higher_timeframe", "none") != "none":
+            if higher_df is None or "close_time" not in history.columns:
+                continue
+            cutoff = int(history.iloc[-1].get("close_time", history.iloc[-1]["open_time"]))
+            historical_higher = higher_df[higher_df["close_time"] <= cutoff]
+        _, historical = evaluate_radar(history, config, historical_higher)
         if not historical or historical["direction"] != direction:
             continue
         future = df.iloc[i + 1:i + horizon + 1]
