@@ -14,7 +14,7 @@ PIN = os.getenv("DASHBOARD_PIN", "").strip()
 VAPID_PUBLIC = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "").strip().replace("\\n", "\n")
 VAPID_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com").strip()
-DEFAULT = {"timeframe":"5m","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
+DEFAULT = {"timeframe":"5m","higher_timeframe":"none","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
 # Free Render has no persistent disk. This fallback keeps the dashboard usable,
 # but settings/signals/subscriptions reset whenever the instance restarts.
 _MEM_CONFIG = dict(DEFAULT)
@@ -36,6 +36,7 @@ def _utc_now():
 def strategy_hash(config):
     relevant = {"symbol": config.get("symbol", "BTCUSDT"),
                 "timeframe": config.get("timeframe"),
+                "higher_timeframe": config.get("higher_timeframe", "none"),
                 "modules": sorted(config.get("modules") or []),
                 "min_score": int(config.get("min_score", 3)),
                 "target_r": float(config.get("target_r", 2.0))}
@@ -133,9 +134,10 @@ def get_settings():
         return dict(row["config"]) if row else dict(DEFAULT)
 
 def set_settings(config):
-    clean = {"symbol":"BTCUSDT","timeframe":config.get("timeframe"),"modules":config.get("modules"),
-             "min_score":config.get("min_score",3),"target_r":config.get("target_r",2.0),
-             "enabled":bool(config.get("enabled",True))}
+    clean = {"symbol":"BTCUSDT","timeframe":config.get("timeframe"),
+             "higher_timeframe":config.get("higher_timeframe","none"),
+             "modules":config.get("modules"),"min_score":config.get("min_score",3),
+             "target_r":config.get("target_r",2.0),"enabled":bool(config.get("enabled",True))}
     validate_radar_config(clean)
     if not os.getenv("DATABASE_URL", "").strip():
         _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
@@ -405,6 +407,8 @@ def scan_dashboard():
         _SCAN_STATUS["timeframe"] = cfg["timeframe"]
         from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability_details
         df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
+        higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+                   if cfg.get("higher_timeframe","none") != "none" else None)
         if df is None or len(df) < 205:
             raise ValueError("El proveedor devolvió menos de 205 velas utilizables.")
         last=df.iloc[-1]
@@ -424,12 +428,12 @@ def scan_dashboard():
             else:
                 active_df=fetch_radar_candles("BTCUSDT",active_tf)
                 track_open_signals(active_df,active_tf)
-        candle_id,signal=evaluate_radar(df,cfg)
+        candle_id,signal=evaluate_radar(df,cfg,higher_df)
         if not signal:
             log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=none",
                      cfg["timeframe"],len(df),candle_time,price)
             return
-        probability_stats=estimate_probability_details(df,cfg,signal["direction"])
+        probability_stats=estimate_probability_details(df,cfg,signal["direction"],higher_df=higher_df)
         if not qualifies_by_historical_probability(probability_stats):
             log.info("Dashboard candidate filtered: tf=%s direction=%s probability=%s samples=%s minimum_strictly_above=35%%",
                      cfg["timeframe"],signal["direction"],probability_stats["probability"],probability_stats["samples"])
@@ -532,7 +536,9 @@ def handle(handler):
             from radar_backtest import run_backtest
             cfg=get_settings()
             df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
-            report=run_backtest(df,cfg,horizon=20,test_fraction=0.30)
+            higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+                       if cfg.get("higher_timeframe","none") != "none" else None)
+            report=run_backtest(df,cfg,horizon=20,test_fraction=0.30,higher_df=higher_df)
             _json(handler,200,report)
         elif path=="/api/dashboard/status" and handler.command=="GET":
             _json(handler,200,{"scan":scan_status(),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL","").strip() else "memory_volatile"})
