@@ -190,7 +190,7 @@ def estimate_probability_details(df, config, direction, horizon=20, min_samples=
     if samples < min_samples:
         return {"probability": None, "samples": samples, "wins": wins, "ci_low": None, "ci_high": None}
     low, high = _wilson_interval(wins, samples)
-    return {"probability": round(100 * wins / samples),
+    return {"probability": round(100 * wins / samples, 1),
             "samples": samples, "wins": wins,
             "ci_low": round(100 * low, 1), "ci_high": round(100 * high, 1)}
 
@@ -204,5 +204,10 @@ MIN_HISTORICAL_PROBABILITY = 35
 
 def qualifies_by_historical_probability(stats, minimum=MIN_HISTORICAL_PROBABILITY):
     """Only admit signals whose historical TP-before-SL rate is strictly above minimum."""
-    probability = stats.get("probability") if isinstance(stats, dict) else None
-    return probability is not None and float(probability) > float(minimum)
+    if not isinstance(stats, dict):
+        return False
+    samples = int(stats.get("samples") or 0)
+    wins = int(stats.get("wins") or 0)
+    if samples < 30:
+        return False
+    return (100.0 * wins / samples) > float(minimum)
