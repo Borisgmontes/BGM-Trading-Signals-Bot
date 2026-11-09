@@ -24,7 +24,7 @@ STOPS=[("ATR (dinámico)","atr"),("Último swing","swing"),("Porcentaje fijo 0,5
 TARGETS=[("1,5R","1.5"),("2R","2.0"),("3R","3.0")]
 RISKS=[("0,25%","0.25"),("0,5%","0.5"),("1%","1.0"),("2%","2.0")]
 STEPS=[("symbol","Elige el activo",ASSETS),("timeframe","Elige la temporalidad",TFS),("entry","Elige el tipo de entrada",ENTRIES),("trend","Filtro de tendencia",TRENDS),("confirmation","Confirmación adicional",CONFIRMS),("stop","Cómo calcular el Stop Loss",STOPS),("target_r","Objetivo de beneficio",TARGETS),("risk_pct","Riesgo nominal por operación",RISKS)]
-RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen","volume"),("ATR","atr"),("Bandas Bollinger","bollinger"),("Barrido de liquidez","liquidity"),("BOS","bos")]
+RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen","volume"),("ATR","atr"),("Bandas Bollinger","bollinger"),("Barrido de liquidez","liquidity"),("BOS","bos"),("ADX","adx"),("VWAP","vwap"),("OBV","obv"),("Stochastic","stochastic"),("Supertrend","supertrend"),("Divergencias RSI","divergence"),("Fibonacci","fibonacci"),("Patrones chartistas","chart_patterns"),("Fair Value Gaps","fvg"),("Order Blocks","order_blocks"),("Fakeouts","fakeout")]
 RADAR_TFS=[("5 minutos","5m"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
 
 HELP="""🤖 BGM TRADING SIGNALS
