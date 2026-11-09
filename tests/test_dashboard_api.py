@@ -7,6 +7,7 @@ def reset_memory(monkeypatch):
     api._MEM_CONFIG.update(api.DEFAULT)
     api._MEM_SIGNALS.clear()
     api._MEM_SUBSCRIPTIONS.clear()
+    api._MEM_STATS_EPOCH.clear()
     api._MEM_NEXT_ID = 1
 
 
@@ -43,6 +44,8 @@ def test_dashboard_signal_can_be_confirmed_in_memory(monkeypatch):
         "direction": "LONG", "entry": 100.0, "stop": 98.0,
         "target": 104.0, "score": 3, "maximum": 8,
         "probability": None, "confirmations": [],
+        "strategy_hash": api.strategy_hash(api.get_settings()),
+        "config_snapshot": api.get_settings(), "stats_epoch": 0,
         "status": "CANDIDATE", "created_at": None,
     })
     assert api.update_signal("1", "CONFIRMED") is True
@@ -104,3 +107,42 @@ def test_vapid_rejects_malformed_private_key(monkeypatch):
         assert "Clave VAPID inválida" in str(exc)
     else:
         raise AssertionError("Malformed VAPID private key must be rejected")
+
+
+def test_strategy_hash_is_stable_and_changes_with_configuration(monkeypatch):
+    reset_memory(monkeypatch)
+    first = api.strategy_hash(api.get_settings())
+    changed = dict(api.get_settings())
+    changed["modules"] = ["trend", "rsi"]
+    assert api.strategy_hash(changed) != first
+    assert api.strategy_hash(dict(api.get_settings())) == first
+
+
+def test_strategy_statistics_are_separated_by_configuration(monkeypatch):
+    reset_memory(monkeypatch)
+    cfg = api.get_settings()
+    current_hash = api.strategy_hash(cfg)
+    api._MEM_SIGNALS.extend([
+        {"id": "1", "status": "CLOSED", "result": "WIN", "entry": 100,
+         "stop": 99, "target": 102, "strategy_hash": current_hash, "stats_epoch": 0},
+        {"id": "2", "status": "CLOSED", "result": "LOSS", "entry": 100,
+         "stop": 99, "target": 102, "strategy_hash": "other-config", "stats_epoch": 0},
+    ])
+    stats = api.list_trades()
+    assert stats["stats"]["total"] == 1
+    assert stats["stats"]["wins"] == 1
+    assert len(stats["strategies"]) == 2
+
+
+def test_manual_stats_reset_preserves_old_trades(monkeypatch):
+    reset_memory(monkeypatch)
+    cfg_hash = api.strategy_hash(api.get_settings())
+    api._MEM_SIGNALS.append({
+        "id": "1", "status": "CLOSED", "result": "WIN", "entry": 100,
+        "stop": 99, "target": 102, "strategy_hash": cfg_hash, "stats_epoch": 0,
+    })
+    api._MEM_STATS_EPOCH[cfg_hash] = 1
+    stats = api.list_trades()
+    assert stats["stats"]["total"] == 0
+    assert stats["strategies"][0]["stats"]["total"] == 1
+    assert len(api._MEM_SIGNALS) == 1
