@@ -99,7 +99,8 @@ def test_probability_counts_unresolved_horizon_as_not_correct(monkeypatch):
 
 
 def test_probability_gate_requires_strictly_more_than_35_percent():
-    assert qualifies_by_historical_probability({"probability": 36, "samples": 100}) is True
-    assert qualifies_by_historical_probability({"probability": 35, "samples": 100}) is False
-    assert qualifies_by_historical_probability({"probability": 14, "samples": 118}) is False
-    assert qualifies_by_historical_probability({"probability": None, "samples": 29}) is False
+    assert qualifies_by_historical_probability({"probability": 36, "wins": 36, "samples": 100}) is True
+    assert qualifies_by_historical_probability({"probability": 35, "wins": 35, "samples": 100}) is False
+    assert qualifies_by_historical_probability({"probability": 35.3, "wins": 106, "samples": 300}) is True
+    assert qualifies_by_historical_probability({"probability": 14.4, "wins": 17, "samples": 118}) is False
+    assert qualifies_by_historical_probability({"probability": None, "wins": 0, "samples": 29}) is False
