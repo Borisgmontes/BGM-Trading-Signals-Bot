@@ -73,3 +73,36 @@ def test_generated_candidate_is_tracked_without_manual_confirmation(monkeypatch)
     assert api._MEM_SIGNALS[0]["status"]=="CLOSED"
     assert api.list_signals()==[]
     assert api.list_trades()["trades"][0]["result"]=="LOSS"
+
+
+def test_auto_tracker_expires_unresolved_signal_after_twenty_closed_candles(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    api._MEM_SIGNALS.clear()
+    api._MEM_SIGNALS.append({
+        "id":"5","candle_id":"300000","timeframe":"5m","direction":"LONG",
+        "entry":100.0,"stop":98.0,"target":104.0,"status":"CONFIRMED","result":None,
+    })
+    candles=pd.DataFrame([
+        {"open_time":600000+i*300000,"high":101.0,"low":99.0}
+        for i in range(20)
+    ])
+    closed=api.track_open_signals(candles,"5m")
+    assert len(closed)==1
+    assert api._MEM_SIGNALS[0]["result"]=="LOSS"
+    assert api._MEM_SIGNALS[0]["result_reason"]=="HORIZON_EXPIRED"
+    assert api._MEM_SIGNALS[0]["status"]=="CLOSED"
+
+
+def test_auto_tracker_does_not_expire_before_twenty_closed_candles(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    api._MEM_SIGNALS.clear()
+    api._MEM_SIGNALS.append({
+        "id":"6","candle_id":"300000","timeframe":"5m","direction":"LONG",
+        "entry":100.0,"stop":98.0,"target":104.0,"status":"CONFIRMED","result":None,
+    })
+    candles=pd.DataFrame([
+        {"open_time":600000+i*300000,"high":101.0,"low":99.0}
+        for i in range(19)
+    ])
+    assert api.track_open_signals(candles,"5m")==[]
+    assert api._MEM_SIGNALS[0]["status"]=="CONFIRMED"
