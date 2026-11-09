@@ -147,26 +147,50 @@ def format_radar_alert(signal):
     )
 
 
-def estimate_probability(df, config, direction, horizon=20, min_samples=30):
-    """Historical TP-before-SL frequency over a fixed research horizon; not a live expiry."""
-    if len(df) < 205 + horizon + min_samples:
-        return None
+def _wilson_interval(wins, samples, z=1.96):
+    """95% Wilson score interval for a binomial success rate."""
+    if samples <= 0:
+        return None, None
+    p = wins / samples
+    z2 = z * z
+    denom = 1 + z2 / samples
+    center = (p + z2 / (2 * samples)) / denom
+    margin = (z * ((p * (1 - p) / samples + z2 / (4 * samples * samples)) ** 0.5)) / denom
+    return max(0.0, center - margin), min(1.0, center + margin)
+
+
+def estimate_probability_details(df, config, direction, horizon=20, min_samples=30):
+    """Estimate TP-before-SL within horizon candles; unresolved cases count as non-wins."""
+    if len(df) < 205 + horizon:
+        return {"probability": None, "samples": 0, "wins": 0, "ci_low": None, "ci_high": None}
     wins, samples = 0, 0
-    for i in range(204, len(df)-horizon):
-        _, historical = evaluate_radar(df.iloc[:i+1], config)
+    for i in range(204, len(df) - horizon):
+        _, historical = evaluate_radar(df.iloc[:i + 1], config)
         if not historical or historical["direction"] != direction:
             continue
-        future = df.iloc[i+1:i+horizon+1]
+        future = df.iloc[i + 1:i + horizon + 1]
+        outcome = "LOSS"
         for _, candle in future.iterrows():
             if direction == "LONG":
-                stop_hit, target_hit = float(candle["low"]) <= historical["stop"], float(candle["high"]) >= historical["target"]
+                stop_hit = float(candle["low"]) <= historical["stop"]
+                target_hit = float(candle["high"]) >= historical["target"]
             else:
-                stop_hit, target_hit = float(candle["high"]) >= historical["stop"], float(candle["low"]) <= historical["target"]
+                stop_hit = float(candle["high"]) >= historical["stop"]
+                target_hit = float(candle["low"]) <= historical["target"]
             if stop_hit or target_hit:
-                samples += 1
-                if target_hit and not stop_hit:
-                    wins += 1
+                outcome = "WIN" if target_hit and not stop_hit else "LOSS"
                 break
+        samples += 1
+        if outcome == "WIN":
+            wins += 1
     if samples < min_samples:
-        return None
-    return round(100*wins/samples)
+        return {"probability": None, "samples": samples, "wins": wins, "ci_low": None, "ci_high": None}
+    low, high = _wilson_interval(wins, samples)
+    return {"probability": round(100 * wins / samples),
+            "samples": samples, "wins": wins,
+            "ci_low": round(100 * low, 1), "ci_high": round(100 * high, 1)}
+
+
+def estimate_probability(df, config, direction, horizon=20, min_samples=30):
+    """Backward-compatible percentage accessor for historical TP-before-SL frequency."""
+    return estimate_probability_details(df, config, direction, horizon, min_samples)["probability"]
