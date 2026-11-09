@@ -411,7 +411,7 @@ def scan_dashboard():
             _SCAN_STATUS["last_signal_at"] = _utc_now()
             _push(signal_row)
             log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s",
-                     cfg["timeframe"],len(df),candle_time,price,signal["direction"],probability)
+                     cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"])
             return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
@@ -428,7 +428,7 @@ def scan_dashboard():
             _SCAN_STATUS["last_signal_at"] = _utc_now()
             _push(signal)
         log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s new=%s",
-                 cfg["timeframe"],len(df),candle_time,price,signal["direction"],probability,bool(row))
+                 cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"],bool(row))
     except Exception as exc:
         _SCAN_STATUS["last_error"] = type(exc).__name__ + ": " + str(exc)[:300]
         log.exception("Dashboard radar scan failed")
