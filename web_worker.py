@@ -93,35 +93,35 @@ def show_radar_step(chat_id,uid,edit_message_id=None):
     cfg=w["config"]; step=w["step"]
     kb=types.InlineKeyboardMarkup(row_width=2)
     if step==0:
-        text="📡 BTC RADAR (1/4)\n\nSelecciona temporalidad:"
+        text="📡 BTC RADAR (1/5)\n\nSelecciona temporalidad:"
         for label,value in RADAR_TFS:
             kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:timeframe:{value}"))
     elif step==1:
-        text="📡 BTC RADAR (2/4)\n\nActiva o desactiva indicadores. Seleccionados: "+str(len(cfg["modules"]))
+        text="📡 BTC RADAR (2/5)\n\nActiva o desactiva indicadores. Seleccionados: "+str(len(cfg["modules"]))
         for label,value in RADAR_MODULES:
             mark="☑️" if value in cfg["modules"] else "⬜"
             kb.add(types.InlineKeyboardButton(mark+" "+label,callback_data=f"radar:toggle:{value}"))
         kb.add(types.InlineKeyboardButton("Continuar ➡️",callback_data="radar:continue"))
     elif step==2:
-        text="📡 BTC RADAR (3/4)\n\n¿Cuántas confirmaciones mínimas deben coincidir?"
+        text="📡 BTC RADAR (3/5)\n\n¿Cuántas confirmaciones mínimas deben coincidir?"
         for n in range(1,len(cfg["modules"])+1):
             kb.add(types.InlineKeyboardButton(str(n)+" confirmaciones",callback_data=f"radar:set:min_score:{n}"))
     elif step==3:
-        text="📡 BTC RADAR (4/5)\\n\\nFiltro de tendencia de una temporalidad superior:"
+        text="📡 BTC RADAR (4/5)\n\nFiltro de tendencia de una temporalidad superior:"
         for label,value in RADAR_HTFS:
             if value=="none" or TF_MINUTES[value] > TF_MINUTES[cfg["timeframe"]]:
                 kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:higher_timeframe:{value}"))
     elif step==4:
-        text="📡 BTC RADAR (5/5)\\n\\nSelecciona objetivo teórico:"
+        text="📡 BTC RADAR (5/5)\n\nSelecciona objetivo teórico:"
         for label,value in TARGETS:
             kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:target_r:{value}"))
     else:
         names=dict(RADAR_MODULES)
         chosen=", ".join(names[x] for x in cfg["modules"])
         htf_label=dict(RADAR_HTFS).get(cfg.get("higher_timeframe","none"),"Sin filtro superior")
-        text=("🧾 RESUMEN BTC RADAR\\n\\nActivo: BTCUSDT\\nTemporalidad: "+cfg["timeframe"]+
-              "\\nConfirmación superior: "+htf_label+"\\nIndicadores: "+chosen+"\\nConfirmaciones mínimas: "+str(cfg["min_score"])+
-              "\\nObjetivo teórico: "+str(cfg["target_r"])+"R\\n\\nGuardar y activar el radar?")
+        text=("🧾 RESUMEN BTC RADAR\n\nActivo: BTCUSDT\nTemporalidad: "+cfg["timeframe"]+
+              "\nConfirmación superior: "+htf_label+"\nIndicadores: "+chosen+"\nConfirmaciones mínimas: "+str(cfg["min_score"])+
+              "\nObjetivo teórico: "+str(cfg["target_r"])+"R\n\nGuardar y activar el radar?")
         kb.add(types.InlineKeyboardButton("💾 Guardar y activar",callback_data="radar:save"))
     kb.add(types.InlineKeyboardButton("✖️ Cancelar",callback_data="wizard:cancel"))
     if edit_message_id:
