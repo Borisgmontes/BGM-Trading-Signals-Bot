@@ -76,8 +76,11 @@
           <div><small>EFECTIVIDAD</small><strong id="trade-rate">—</strong></div>
           <div><small>ABIERTAS</small><strong id="trade-open">0</strong></div>
           <div><small>PROFIT FACTOR</small><strong id="trade-pf">—</strong></div>
-          <div><small>RESULTADO (R)</small><strong id="trade-netr">0</strong></div>
+          <div><small>RESULTADO BRUTO (R)</small><strong id="trade-netr">0</strong></div>
+          <div><small>EXPECTATIVA (R/OPERACIÓN)</small><strong id="trade-expectancy">—</strong></div>
+          <div><small>DRAWDOWN MÁX. (R)</small><strong id="trade-drawdown">0</strong></div>
         </div>
+        <p class="muted">Estadísticas basadas en señales confirmadas/candidatas cerradas por TP, SL o vencimiento a 20 velas. Resultado bruto: no descuenta comisiones ni deslizamiento.</p>
         <div class="trade-actions"><button id="reset-stats" class="secondary">Reiniciar contador de esta combinación</button></div>
         <div id="trades" class="trades"><div class="empty">Las señales que confirmes aparecerán aquí para registrar su resultado.</div></div>
         <div class="strategy-history">
