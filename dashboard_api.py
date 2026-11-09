@@ -161,6 +161,11 @@ def list_trades():
     epoch = _current_epoch(active_hash)
     if not os.getenv("DATABASE_URL", "").strip():
         all_rows = [dict(x) for x in _MEM_SIGNALS if x.get("status") in ("CONFIRMED", "CLOSED")]
+        # Compatibility for in-memory records created before strategy tagging was added.
+        for item in all_rows:
+            item.setdefault("strategy_hash", active_hash)
+            item.setdefault("stats_epoch", 0)
+            item.setdefault("config_snapshot", cfg)
     else:
         with _db() as conn:
             rows = conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
