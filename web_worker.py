@@ -1,5 +1,6 @@
 import json, logging, os, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from datetime import datetime
 import telebot
 from telebot import types
 import user_store
@@ -270,14 +271,52 @@ if bot:
         except Exception:
             log.exception("callback handler failed"); bot.send_message(chat_id,"Ocurrió un error al procesar esa opción. Inténtalo de nuevo.")
 
+def health_snapshot(scan=None, now=None):
+    """Return an honest readiness status; stale scans and missing dependencies are unhealthy."""
+    scan = dashboard_api.scan_status() if scan is None else scan
+    now = time.time() if now is None else float(now)
+    last_success = scan.get("last_success_at")
+    try:
+        last_success_ts = datetime.fromisoformat(
+            str(last_success).replace("Z", "+00:00")
+        ).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        last_success_ts = None
+
+    max_scan_age = max(POLL_SECONDS * 3, 900)
+    scan_fresh = (
+        last_success_ts is not None
+        and -60 <= now - last_success_ts <= max_scan_age
+    )
+    checks = {
+        "scanner_started": bool(ready["scanner_started"]),
+        "database_configured": bool(ready["database_configured"]),
+        "database_ready": bool(db_ready),
+        "telegram_configured": bool(ready["telegram_configured"]),
+        "scan_fresh": scan_fresh,
+        "scan_error_free": not bool(scan.get("last_error")),
+    }
+    healthy = all(checks.values())
+    payload = {
+        "service": "BGM Trading Signals",
+        "status": "healthy" if healthy else "unhealthy",
+        "checks": checks,
+        "last_scan_at": last_success,
+        "last_scan_error": scan.get("last_error"),
+        "scan_count": scan.get("scan_count", 0),
+        "persistence_mode": ready["persistence_mode"],
+        "trading_execution": False,
+    }
+    return (200 if healthy else 503), payload
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if dashboard_api.handle(self): return
         if self.path!="/health": self.send_response(404); self.end_headers(); return
-        scan=dashboard_api.scan_status()
-        healthy=bool(scan.get("last_success_at") and not scan.get("last_error"))
-        body=json.dumps({"service":"BGM Trading Signals","status":"scanning" if healthy else ("starting" if ready["scanner_started"] and db_ready else "configuration_required"),"scanner_thread_started":ready["scanner_started"],"database_ready":db_ready,"last_scan_ok":healthy,"last_scan_at":scan.get("last_success_at"),"last_scan_error":scan.get("last_error"),"scan_count":scan.get("scan_count",0),"persistence_mode":ready["persistence_mode"],"telegram_configured":ready["telegram_configured"],"database_configured":ready["database_configured"],"users_seen":ready["users_seen"],"trading_execution":False}).encode()
-        self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+        status, payload = health_snapshot()
+        body=json.dumps(payload).encode()
+        self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
         if dashboard_api.handle(self): return
         self.send_response(404); self.end_headers()
