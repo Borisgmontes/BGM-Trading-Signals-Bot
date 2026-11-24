@@ -1,5 +1,5 @@
 import json, logging, os, threading, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime
 import telebot
 from telebot import types
@@ -381,4 +381,4 @@ if __name__=="__main__":
     if bot: threading.Thread(target=listener,daemon=True).start()
     ready["scanner_started"]=True
     threading.Thread(target=scanner,daemon=True).start()
-    HTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),Handler).serve_forever()
