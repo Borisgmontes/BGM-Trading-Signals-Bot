@@ -218,6 +218,14 @@ def init_dashboard_db():
                 conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config) VALUES(1,%s,%s) ON CONFLICT(id,user_id) DO NOTHING",
                              (user["user_id"],json.dumps(DEFAULT)))
             conn.execute("SELECT set_config('app.user_id','__system__',false)")
+    for user in users:
+        with _tenant_scope(user["user_id"]):
+            with _db() as tenant_conn:
+                visible=tenant_conn.execute("SELECT count(*) AS n FROM bgm_dashboard_config").fetchone()["n"]
+                if int(visible)!=1:
+                    raise RuntimeError("Fallo de aislamiento RLS en la configuración de un usuario.")
+    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified",len(users))
+
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
