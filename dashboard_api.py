@@ -210,9 +210,7 @@ def init_dashboard_db():
                 conn.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
                 conn.execute(f"DROP POLICY IF EXISTS {policy} ON {table}")
                 conn.execute(f"CREATE POLICY {policy} ON {table} USING (user_id=current_setting('app.user_id',true)) WITH CHECK (user_id=current_setting('app.user_id',true))")
-            conn.execute("""CREATE OR REPLACE FUNCTION bgm_dashboard_tenant_ids()
-              RETURNS TABLE(user_id TEXT) LANGUAGE sql SECURITY DEFINER SET search_path=public
-              AS $ SELECT u.user_id FROM bgm_dashboard_users AS u WHERE u.active=true $""")
+            conn.execute("CREATE OR REPLACE FUNCTION bgm_dashboard_tenant_ids() RETURNS TABLE(user_id TEXT) LANGUAGE sql SECURITY DEFINER SET search_path=public AS 'SELECT u.user_id FROM bgm_dashboard_users AS u WHERE u.active=true'")
             _provision_pins(conn)
             users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
             for user in users:
