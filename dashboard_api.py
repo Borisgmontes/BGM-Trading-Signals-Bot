@@ -216,8 +216,10 @@ def init_dashboard_db():
             _provision_pins(conn)
             users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
             for user in users:
+                conn.execute("SELECT set_config('app.user_id',%s,false)",(user["user_id"],))
                 conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config) VALUES(1,%s,%s) ON CONFLICT(id,user_id) DO NOTHING",
                              (user["user_id"],json.dumps(DEFAULT)))
+            conn.execute("SELECT set_config('app.user_id','__system__',false)")
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
