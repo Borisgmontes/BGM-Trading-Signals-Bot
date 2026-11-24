@@ -163,6 +163,7 @@ def init_dashboard_db():
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_config (
               id SMALLINT NOT NULL DEFAULT 1, config JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
             conn.execute("ALTER TABLE bgm_dashboard_config ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("ALTER TABLE bgm_dashboard_config DISABLE ROW LEVEL SECURITY")
             conn.execute("DELETE FROM bgm_dashboard_config WHERE user_id IS NULL")
             conn.execute("ALTER TABLE bgm_dashboard_config DROP CONSTRAINT IF EXISTS bgm_dashboard_config_id_check")
             conn.execute("ALTER TABLE bgm_dashboard_config DROP CONSTRAINT IF EXISTS bgm_dashboard_config_pkey")
@@ -171,6 +172,7 @@ def init_dashboard_db():
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_push (
               endpoint TEXT NOT NULL, subscription JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
             conn.execute("ALTER TABLE bgm_dashboard_push ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("ALTER TABLE bgm_dashboard_push DISABLE ROW LEVEL SECURITY")
             conn.execute("DELETE FROM bgm_dashboard_push WHERE user_id IS NULL")
             conn.execute("ALTER TABLE bgm_dashboard_push DROP CONSTRAINT IF EXISTS bgm_dashboard_push_pkey")
             conn.execute("ALTER TABLE bgm_dashboard_push ALTER COLUMN user_id SET NOT NULL")
@@ -188,6 +190,7 @@ def init_dashboard_db():
                 ("probability_wins","INTEGER"),("probability_ci_low","DOUBLE PRECISION"),("probability_ci_high","DOUBLE PRECISION"),
                 ("strategy_hash","TEXT"),("config_snapshot","JSONB"),("stats_epoch","INTEGER NOT NULL DEFAULT 0"),("user_id","TEXT")):
                 conn.execute(f"ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS {col} {typ}")
+            conn.execute("ALTER TABLE bgm_dashboard_signals DISABLE ROW LEVEL SECURITY")
             conn.execute("DELETE FROM bgm_dashboard_signals WHERE user_id IS NULL")
             conn.execute("ALTER TABLE bgm_dashboard_signals ALTER COLUMN user_id SET NOT NULL")
             conn.execute("ALTER TABLE bgm_dashboard_signals DROP CONSTRAINT IF EXISTS bgm_dashboard_signals_candle_id_timeframe_key")
@@ -196,6 +199,7 @@ def init_dashboard_db():
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_strategy_state (
               strategy_hash TEXT NOT NULL, epoch INTEGER NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
             conn.execute("ALTER TABLE bgm_dashboard_strategy_state ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("ALTER TABLE bgm_dashboard_strategy_state DISABLE ROW LEVEL SECURITY")
             conn.execute("DELETE FROM bgm_dashboard_strategy_state WHERE user_id IS NULL")
             conn.execute("ALTER TABLE bgm_dashboard_strategy_state DROP CONSTRAINT IF EXISTS bgm_dashboard_strategy_state_pkey")
             conn.execute("ALTER TABLE bgm_dashboard_strategy_state ALTER COLUMN user_id SET NOT NULL")
@@ -232,7 +236,7 @@ def set_settings(config):
         _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
         return clean
     with _db() as conn:
-        conn.execute("INSERT INTO bgm_dashboard_config(id,config,updated_at) VALUES(1,%s,now()) ON CONFLICT(id) DO UPDATE SET config=EXCLUDED.config,updated_at=now()", (json.dumps(clean),))
+        conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config,updated_at) VALUES(1,%s,%s,now()) ON CONFLICT(id,user_id) DO UPDATE SET config=EXCLUDED.config,updated_at=now()", (_TENANT.get(),json.dumps(clean)))
     return clean
 
 def _serialize_signal(row):
@@ -446,7 +450,7 @@ def save_subscription(sub):
         _MEM_SUBSCRIPTIONS[endpoint] = dict(sub)
         return
     with _db() as conn:
-        conn.execute("INSERT INTO bgm_dashboard_push(endpoint,subscription) VALUES(%s,%s) ON CONFLICT(endpoint) DO UPDATE SET subscription=EXCLUDED.subscription",(endpoint,json.dumps(sub)))
+        conn.execute("INSERT INTO bgm_dashboard_push(user_id,endpoint,subscription) VALUES(%s,%s,%s) ON CONFLICT(user_id,endpoint) DO UPDATE SET subscription=EXCLUDED.subscription",(_TENANT.get(),endpoint,json.dumps(sub)))
 
 def _push(signal):
     if not (VAPID_PUBLIC and VAPID_PRIVATE):
@@ -568,12 +572,12 @@ def _scan_dashboard_for_tenant():
                      cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"])
             return
         with _db() as conn:
-            row=conn.execute("""INSERT INTO bgm_dashboard_signals(candle_id,timeframe,direction,entry,stop,target,score,maximum,
+            row=conn.execute("""INSERT INTO bgm_dashboard_signals(user_id,candle_id,timeframe,direction,entry,stop,target,score,maximum,
               probability,probability_samples,probability_wins,probability_ci_low,probability_ci_high,
               confirmations,created_at,strategy_hash,config_snapshot,stats_epoch)
-              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
-              ON CONFLICT(candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
-              (candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
+              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
+              ON CONFLICT(user_id,candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
+              (_TENANT.get(),candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
                signal["score"],signal["maximum"],signal["probability"],signal["probability_samples"],signal["probability_wins"],
                signal["probability_ci_low"],signal["probability_ci_high"],json.dumps(signal["confirmations"]),
                config_hash,json.dumps(cfg),stats_epoch)).fetchone()
@@ -658,10 +662,10 @@ def handle(handler):
                 new_epoch = _MEM_STATS_EPOCH[config_hash]
             else:
                 with _db() as conn:
-                    row = conn.execute("""INSERT INTO bgm_dashboard_strategy_state(strategy_hash,epoch,updated_at)
-                      VALUES(%s,1,now()) ON CONFLICT(strategy_hash) DO UPDATE
+                    row = conn.execute("""INSERT INTO bgm_dashboard_strategy_state(strategy_hash,user_id,epoch,updated_at)
+                      VALUES(%s,%s,1,now()) ON CONFLICT(strategy_hash,user_id) DO UPDATE
                       SET epoch=bgm_dashboard_strategy_state.epoch+1,updated_at=now()
-                      RETURNING epoch""", (config_hash,)).fetchone()
+                      RETURNING epoch""", (config_hash,_TENANT.get())).fetchone()
                     new_epoch = int(row["epoch"])
             _json(handler,200,{"ok":True,"strategy_hash":config_hash,"stats_epoch":new_epoch})
         elif path=="/api/dashboard/backtest" and handler.command=="POST":
