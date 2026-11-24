@@ -1,5 +1,5 @@
 """Private single-owner PWA dashboard API and web-push delivery."""
-import json, os, hmac, logging, base64, hashlib
+import json, os, hmac, logging, base64, hashlib, contextvars, uuid, secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 
 log = logging.getLogger("BGM.dashboard")
 ROOT = Path(__file__).parent / "dashboard"
-PIN = os.getenv("DASHBOARD_PIN", "").strip()
+_TENANT = contextvars.ContextVar("bgm_dashboard_tenant", default="__anonymous__")
 VAPID_PUBLIC = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "").strip().replace("\\n", "\n")
 VAPID_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com").strip()
@@ -89,43 +89,131 @@ def _load_vapid_key():
 
 def _db():
     url=os.getenv("DATABASE_URL","").strip()
-    if not url: raise RuntimeError("Falta DATABASE_URL: el dashboard necesita almacenamiento persistente.")
-    return psycopg.connect(url,row_factory=dict_row,connect_timeout=10)
+    if not url: raise RuntimeError("Falta DATABASE_URL: el dashboard multiusuario necesita PostgreSQL persistente.")
+    conn=psycopg.connect(url,row_factory=dict_row,connect_timeout=10)
+    conn.execute("SELECT set_config('app.user_id',%s,false)",(_TENANT.get(),))
+    return conn
+
+
+def _pin_digest(pin, salt):
+    return hashlib.pbkdf2_hmac("sha256",pin.encode("utf-8"),bytes.fromhex(salt),310000).hex()
+
+
+def _tenant_scope(user_id):
+    class Scope:
+        def __enter__(self): self.token=_TENANT.set(str(user_id)); return self
+        def __exit__(self,*args): _TENANT.reset(self.token)
+    return Scope()
+
+
+def _provision_pins(conn):
+    pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
+    if not pins: log.warning("DASHBOARD_PINS is empty; no dashboard PINs provisioned."); return
+    for pin in pins:
+        if not pin.isdigit() or len(pin)<8: raise ValueError("Cada PIN debe contener al menos 8 dígitos.")
+        users=conn.execute("SELECT pin_salt,pin_hash FROM bgm_dashboard_users").fetchall()
+        if any(hmac.compare_digest(_pin_digest(pin,u["pin_salt"]),u["pin_hash"]) for u in users): continue
+        salt=secrets.token_hex(16)
+        conn.execute("INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,active) VALUES(%s,%s,%s,true)",
+                     (str(uuid.uuid4()),salt,_pin_digest(pin,salt)))
+
+
+def _user_for_pin(pin):
+    if not pin or not pin.isdigit(): return None
+    with _tenant_scope("__auth__"):
+        with _db() as conn:
+            users=conn.execute("SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users WHERE active=true").fetchall()
+            for user in users:
+                if hmac.compare_digest(_pin_digest(pin,user["pin_salt"]),user["pin_hash"]):
+                    return user["user_id"]
+    return None
+
+
+def _user_for_session(token):
+    if not token: return None
+    digest=hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _tenant_scope("__auth__"):
+        with _db() as conn:
+            row=conn.execute("SELECT user_id FROM bgm_dashboard_sessions WHERE token_hash=%s AND expires_at>now()",
+                             (digest,)).fetchone()
+            return row["user_id"] if row else None
+
+
+def _create_session(user_id):
+    token=secrets.token_urlsafe(32)
+    digest=hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _tenant_scope("__auth__"):
+        with _db() as conn:
+            conn.execute("INSERT INTO bgm_dashboard_sessions(token_hash,user_id,expires_at) VALUES(%s,%s,now()+interval '30 days')",
+                         (digest,user_id))
+    return token
 
 def init_dashboard_db():
     if not os.getenv("DATABASE_URL", "").strip():
-        log.warning("Dashboard running in volatile memory mode; configure DATABASE_URL for persistence.")
-        return
-    with _db() as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_config (
-          id SMALLINT PRIMARY KEY DEFAULT 1 CHECK(id=1), config JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())""")
-        conn.execute("""INSERT INTO bgm_dashboard_config(id,config) VALUES(1,%s) ON CONFLICT(id) DO NOTHING""",(json.dumps(DEFAULT),))
-        conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_push (
-          endpoint TEXT PRIMARY KEY, subscription JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT now())""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_signals (
-          id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, timeframe TEXT NOT NULL, direction TEXT NOT NULL,
-          entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
-          score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION, probability_samples INTEGER, probability_wins INTEGER,
-          probability_ci_low DOUBLE PRECISION, probability_ci_high DOUBLE PRECISION,
-          confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
-          result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
-          UNIQUE(candle_id,timeframe))""")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result TEXT")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS result_reason TEXT")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS last_checked_candle BIGINT")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_samples INTEGER")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_wins INTEGER")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_ci_low DOUBLE PRECISION")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS probability_ci_high DOUBLE PRECISION")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS strategy_hash TEXT")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS config_snapshot JSONB")
-        conn.execute("ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS stats_epoch INTEGER NOT NULL DEFAULT 0")
-        conn.execute("UPDATE bgm_dashboard_signals SET strategy_hash='legacy' WHERE strategy_hash IS NULL")
-        conn.execute("CREATE TABLE IF NOT EXISTS bgm_dashboard_strategy_state (strategy_hash TEXT PRIMARY KEY, epoch INTEGER NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now())")
-        conn.execute("ALTER TABLE bgm_dashboard_signals DROP CONSTRAINT IF EXISTS bgm_dashboard_signals_candle_id_timeframe_key")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS bgm_dashboard_signals_candle_tf_strategy_uq ON bgm_dashboard_signals(candle_id,timeframe,strategy_hash)")
+        raise RuntimeError("DATABASE_URL es obligatorio: no se permite modo memoria en el dashboard multiusuario.")
+    with _tenant_scope("__system__"):
+        with _db() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_users (
+              user_id TEXT PRIMARY KEY, pin_salt TEXT NOT NULL, pin_hash TEXT NOT NULL UNIQUE,
+              active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ DEFAULT now())""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_sessions (
+              token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES bgm_dashboard_users(user_id) ON DELETE CASCADE,
+              expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT now())""")
+            conn.execute("CREATE INDEX IF NOT EXISTS bgm_dashboard_sessions_user_idx ON bgm_dashboard_sessions(user_id)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_config (
+              id SMALLINT NOT NULL DEFAULT 1, config JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
+            conn.execute("ALTER TABLE bgm_dashboard_config ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("DELETE FROM bgm_dashboard_config WHERE user_id IS NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_config DROP CONSTRAINT IF EXISTS bgm_dashboard_config_id_check")
+            conn.execute("ALTER TABLE bgm_dashboard_config DROP CONSTRAINT IF EXISTS bgm_dashboard_config_pkey")
+            conn.execute("ALTER TABLE bgm_dashboard_config ALTER COLUMN user_id SET NOT NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_config ADD CONSTRAINT bgm_dashboard_config_pkey PRIMARY KEY(id,user_id)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_push (
+              endpoint TEXT NOT NULL, subscription JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
+            conn.execute("ALTER TABLE bgm_dashboard_push ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("DELETE FROM bgm_dashboard_push WHERE user_id IS NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_push DROP CONSTRAINT IF EXISTS bgm_dashboard_push_pkey")
+            conn.execute("ALTER TABLE bgm_dashboard_push ALTER COLUMN user_id SET NOT NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_push ADD CONSTRAINT bgm_dashboard_push_pkey PRIMARY KEY(user_id,endpoint)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_signals (
+              id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, timeframe TEXT NOT NULL, direction TEXT NOT NULL,
+              entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
+              score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION, probability_samples INTEGER, probability_wins INTEGER,
+              probability_ci_low DOUBLE PRECISION, probability_ci_high DOUBLE PRECISION,
+              confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
+              result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
+              UNIQUE(candle_id,timeframe))""")
+            for col,typ in (("result","TEXT"),("exit_price","DOUBLE PRECISION"),("closed_at","TIMESTAMPTZ"),
+                ("result_reason","TEXT"),("last_checked_candle","BIGINT"),("probability_samples","INTEGER"),
+                ("probability_wins","INTEGER"),("probability_ci_low","DOUBLE PRECISION"),("probability_ci_high","DOUBLE PRECISION"),
+                ("strategy_hash","TEXT"),("config_snapshot","JSONB"),("stats_epoch","INTEGER NOT NULL DEFAULT 0"),("user_id","TEXT")):
+                conn.execute(f"ALTER TABLE bgm_dashboard_signals ADD COLUMN IF NOT EXISTS {col} {typ}")
+            conn.execute("DELETE FROM bgm_dashboard_signals WHERE user_id IS NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_signals ALTER COLUMN user_id SET NOT NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_signals DROP CONSTRAINT IF EXISTS bgm_dashboard_signals_candle_id_timeframe_key")
+            conn.execute("DROP INDEX IF EXISTS bgm_dashboard_signals_candle_tf_strategy_uq")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS bgm_dashboard_signals_tenant_candle_uq ON bgm_dashboard_signals(user_id,candle_id,timeframe,strategy_hash)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_strategy_state (
+              strategy_hash TEXT NOT NULL, epoch INTEGER NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT now(), user_id TEXT)""")
+            conn.execute("ALTER TABLE bgm_dashboard_strategy_state ADD COLUMN IF NOT EXISTS user_id TEXT")
+            conn.execute("DELETE FROM bgm_dashboard_strategy_state WHERE user_id IS NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_strategy_state DROP CONSTRAINT IF EXISTS bgm_dashboard_strategy_state_pkey")
+            conn.execute("ALTER TABLE bgm_dashboard_strategy_state ALTER COLUMN user_id SET NOT NULL")
+            conn.execute("ALTER TABLE bgm_dashboard_strategy_state ADD CONSTRAINT bgm_dashboard_strategy_state_pkey PRIMARY KEY(strategy_hash,user_id)")
+            for table in ("bgm_dashboard_config","bgm_dashboard_push","bgm_dashboard_signals","bgm_dashboard_strategy_state"):
+                policy=table+"_tenant_policy"
+                conn.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+                conn.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+                conn.execute(f"DROP POLICY IF EXISTS {policy} ON {table}")
+                conn.execute(f"CREATE POLICY {policy} ON {table} USING (user_id=current_setting('app.user_id',true)) WITH CHECK (user_id=current_setting('app.user_id',true))")
+            conn.execute("""CREATE OR REPLACE FUNCTION bgm_dashboard_tenant_ids()
+              RETURNS TABLE(user_id TEXT) LANGUAGE sql SECURITY DEFINER SET search_path=public
+              AS $$ SELECT user_id FROM bgm_dashboard_users WHERE active=true $$""")
+            _provision_pins(conn)
+            users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
+            for user in users:
+                conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config) VALUES(1,%s,%s) ON CONFLICT(id,user_id) DO NOTHING",
+                             (user["user_id"],json.dumps(DEFAULT)))
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
@@ -413,8 +501,8 @@ def send_test_push():
         raise RuntimeError("No hay suscripción Push válida o faltan claves VAPID.")
     return sent
 
-def scan_dashboard():
-    """Fetch and evaluate the latest closed BTC candle; expose verifiable health."""
+def _scan_dashboard_for_tenant():
+    """Fetch and evaluate the latest closed BTC candle for the current tenant."""
     _SCAN_STATUS["last_attempt_at"] = _utc_now()
     _SCAN_STATUS["scan_count"] += 1
     _SCAN_STATUS["last_error"] = None
@@ -499,6 +587,23 @@ def scan_dashboard():
         _SCAN_STATUS["last_error"] = type(exc).__name__ + ": " + str(exc)[:300]
         log.exception("Dashboard radar scan failed")
 
+def scan_dashboard():
+    """Evaluate the shared market feed independently for every active dashboard account."""
+    if not os.getenv("DATABASE_URL", "").strip():
+        _SCAN_STATUS["last_error"]="DATABASE_URL obligatorio para multiusuario"
+        return
+    try:
+        with _tenant_scope("__system__"):
+            with _db() as conn:
+                rows=conn.execute("SELECT user_id FROM bgm_dashboard_tenant_ids()").fetchall()
+        for row in rows:
+            with _tenant_scope(row["user_id"]):
+                _scan_dashboard_for_tenant()
+    except Exception as exc:
+        _SCAN_STATUS["last_error"]=type(exc).__name__+": "+str(exc)[:300]
+        log.exception("Multi-user dashboard scan failed")
+
+
 def _json(handler,status,data):
     body=json.dumps(data).encode()
     handler.send_response(status); handler.send_header("Content-Type","application/json; charset=utf-8")
@@ -520,15 +625,27 @@ def handle(handler):
         if path=="/sw.js": handler.send_header("Service-Worker-Allowed","/")
         handler.end_headers(); handler.wfile.write(body); return True
     if not path.startswith("/api/dashboard/"): return False
-    if not PIN:
-        _json(handler,503,{"error":"Falta configurar DASHBOARD_PIN en el servicio."}); return True
     if path=="/api/dashboard/login" and handler.command=="POST":
-        supplied=handler.headers.get("X-Dashboard-Token","")
-        if hmac.compare_digest(supplied,PIN): _json(handler,200,{"ok":True})
-        else: _json(handler,401,{"error":"PIN incorrecto."})
+        try:
+            payload=_read(handler)
+            supplied=str(payload.get("pin") or handler.headers.get("X-Dashboard-Token","")).strip()
+            user_id=_user_for_pin(supplied)
+            if not user_id: _json(handler,401,{"error":"PIN incorrecto o no habilitado."}); return True
+            _json(handler,200,{"ok":True,"token":_create_session(user_id)})
+        except Exception:
+            log.exception("Dashboard login failed")
+            _json(handler,503,{"error":"Servicio de acceso no disponible."})
         return True
+    if path=="/api/dashboard/logout" and handler.command=="POST":
+        supplied=handler.headers.get("X-Dashboard-Token","")
+        digest=hashlib.sha256(supplied.encode("utf-8")).hexdigest()
+        with _tenant_scope("__auth__"):
+            with _db() as conn: conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
+        _json(handler,200,{"ok":True}); return True
     supplied=handler.headers.get("X-Dashboard-Token","")
-    if not hmac.compare_digest(supplied,PIN): _json(handler,401,{"error":"Acceso no autorizado."}); return True
+    user_id=_user_for_session(supplied)
+    if not user_id: _json(handler,401,{"error":"Sesión inválida o vencida. Vuelve a entrar con tu PIN."}); return True
+    _TENANT.set(user_id)
     try:
         if path=="/api/dashboard/settings" and handler.command=="GET": _json(handler,200,get_settings())
         elif path=="/api/dashboard/settings" and handler.command=="POST": _json(handler,200,set_settings(_read(handler)))
