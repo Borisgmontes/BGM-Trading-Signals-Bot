@@ -146,3 +146,18 @@ def test_manual_stats_reset_preserves_old_trades(monkeypatch):
     assert stats["stats"]["total"] == 0
     assert stats["strategies"][0]["stats"]["total"] == 1
     assert len(api._MEM_SIGNALS) == 1
+
+
+
+def test_scan_status_isolated_by_dashboard_tenant():
+    with api._tenant_scope("tenant-a"):
+        api._SCAN_STATUS["last_price"] = 123.45
+        a = api.scan_status()
+    with api._tenant_scope("tenant-b"):
+        b = api.scan_status()
+        api._SCAN_STATUS["last_price"] = 987.65
+    with api._tenant_scope("tenant-a"):
+        a_after = api.scan_status()
+    assert a["last_price"] == 123.45
+    assert b["last_price"] is None
+    assert a_after["last_price"] == 123.45
