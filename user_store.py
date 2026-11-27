@@ -99,3 +99,13 @@ def claim_signal(strategy_id,candle_id):
     with _connect() as conn:
         row=conn.execute("INSERT INTO bgm_sent_signals(strategy_id,candle_id) VALUES(%s,%s) ON CONFLICT DO NOTHING RETURNING strategy_id",key).fetchone()
         return row is not None
+
+
+def release_signal(strategy_id, candle_id):
+    """Allow retry if Telegram rejects a message after its deduplication claim."""
+    key=(int(strategy_id),str(candle_id))
+    if not DATABASE_URL:
+        _MEM_SENT.discard(key)
+        return
+    with _connect() as conn:
+        conn.execute("DELETE FROM bgm_sent_signals WHERE strategy_id=%s AND candle_id=%s",key)

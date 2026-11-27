@@ -1,15 +1,19 @@
 import json, logging, os, threading, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime
 import telebot
 from telebot import types
 import user_store
+import dashboard_api
 from strategy_engine import validate_config, fetch_candles, evaluate, format_alert
+from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_radar, format_radar_alert, estimate_probability_details, qualifies_by_historical_probability, TF_MINUTES
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO"))
 log=logging.getLogger("BGM")
 TOKEN=os.getenv("BOT_TOKEN","").strip()
+POLLING_ENABLED=os.getenv("ENABLE_TELEGRAM_POLLING","true").strip().lower() not in ("0","false","no","off")
 POLL_SECONDS=max(60,int(os.getenv("POLL_SECONDS","300")))
-bot=telebot.TeleBot(TOKEN) if TOKEN else None
+bot=telebot.TeleBot(TOKEN) if TOKEN and POLLING_ENABLED else None
 ready={"telegram_configured":bool(TOKEN),"database_configured":bool(os.getenv("DATABASE_URL")),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL") else "memory_volatile","scanner_started":False,"users_seen":0}
 db_ready=False
 WIZARDS={}
@@ -22,6 +26,15 @@ STOPS=[("ATR (dinámico)","atr"),("Último swing","swing"),("Porcentaje fijo 0,5
 TARGETS=[("1,5R","1.5"),("2R","2.0"),("3R","3.0")]
 RISKS=[("0,25%","0.25"),("0,5%","0.5"),("1%","1.0"),("2%","2.0")]
 STEPS=[("symbol","Elige el activo",ASSETS),("timeframe","Elige la temporalidad",TFS),("entry","Elige el tipo de entrada",ENTRIES),("trend","Filtro de tendencia",TRENDS),("confirmation","Confirmación adicional",CONFIRMS),("stop","Cómo calcular el Stop Loss",STOPS),("target_r","Objetivo de beneficio",TARGETS),("risk_pct","Riesgo nominal por operación",RISKS)]
+RADAR_MODULES=[("Tendencia EMA","trend"),("RSI","rsi"),("MACD","macd"),("Volumen","volume"),("ATR","atr"),("Bandas Bollinger","bollinger"),("Barrido de liquidez","liquidity"),("BOS","bos"),("ADX","adx"),("VWAP","vwap"),("OBV","obv"),("Stochastic","stochastic"),("Supertrend","supertrend"),("Divergencias RSI","divergence"),("Fibonacci","fibonacci"),("Patrones chartistas","chart_patterns"),("Fair Value Gaps","fvg"),("Order Blocks","order_blocks"),("Fakeouts","fakeout")]
+RADAR_TFS=[("5 minutos","5m"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
+RADAR_HTFS=[("Sin filtro superior","none"),("15 minutos","15m"),("1 hora","1h"),("4 horas","4h")]
+
+
+def radar_module_labels(modules):
+    """Return readable labels for radar module IDs, preserving unknown IDs safely."""
+    names = {value: label for label, value in RADAR_MODULES}
+    return [names.get(module, module) for module in modules]
 
 HELP="""🤖 BGM TRADING SIGNALS
 Usa los botones para configurar una estrategia sin escribir parámetros.
@@ -39,6 +52,7 @@ def main_keyboard():
     k=types.InlineKeyboardMarkup(row_width=2)
     k.add(types.InlineKeyboardButton("➕ Crear estrategia",callback_data="wizard:start"),
           types.InlineKeyboardButton("📋 Mis estrategias",callback_data="strategies:list"))
+    k.add(types.InlineKeyboardButton("📡 Configurar BTC RADAR",callback_data="radar:start"))
     k.add(types.InlineKeyboardButton("🧪 Probar formato",callback_data="test:sim"))
     k.add(types.InlineKeyboardButton("❔ Ayuda",callback_data="help:show"))
     return k
@@ -81,6 +95,47 @@ def show_step(chat_id,uid,edit_message_id=None):
         except Exception: bot.send_message(chat_id,text,reply_markup=kb)
     else: bot.send_message(chat_id,text,reply_markup=kb)
 
+def show_radar_step(chat_id,uid,edit_message_id=None):
+    w=WIZARDS.get(uid)
+    if not w or not w.get("radar"): return
+    cfg=w["config"]; step=w["step"]
+    kb=types.InlineKeyboardMarkup(row_width=2)
+    if step==0:
+        text="📡 BTC RADAR (1/5)\n\nSelecciona temporalidad:"
+        for label,value in RADAR_TFS:
+            kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:timeframe:{value}"))
+    elif step==1:
+        text="📡 BTC RADAR (2/5)\n\nActiva o desactiva indicadores. Seleccionados: "+str(len(cfg["modules"]))
+        for label,value in RADAR_MODULES:
+            mark="☑️" if value in cfg["modules"] else "⬜"
+            kb.add(types.InlineKeyboardButton(mark+" "+label,callback_data=f"radar:toggle:{value}"))
+        kb.add(types.InlineKeyboardButton("Continuar ➡️",callback_data="radar:continue"))
+    elif step==2:
+        text="📡 BTC RADAR (3/5)\n\n¿Cuántas confirmaciones mínimas deben coincidir?"
+        for n in range(1,len(cfg["modules"])+1):
+            kb.add(types.InlineKeyboardButton(str(n)+" confirmaciones",callback_data=f"radar:set:min_score:{n}"))
+    elif step==3:
+        text="📡 BTC RADAR (4/5)\n\nFiltro de tendencia de una temporalidad superior:"
+        for label,value in RADAR_HTFS:
+            if value=="none" or TF_MINUTES[value] > TF_MINUTES[cfg["timeframe"]]:
+                kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:higher_timeframe:{value}"))
+    elif step==4:
+        text="📡 BTC RADAR (5/5)\n\nSelecciona objetivo teórico:"
+        for label,value in TARGETS:
+            kb.add(types.InlineKeyboardButton(label,callback_data=f"radar:set:target_r:{value}"))
+    else:
+        chosen=", ".join(radar_module_labels(cfg["modules"]))
+        htf_label=dict(RADAR_HTFS).get(cfg.get("higher_timeframe","none"),"Sin filtro superior")
+        text=("🧾 RESUMEN BTC RADAR\n\nActivo: BTCUSDT\nTemporalidad: "+cfg["timeframe"]+
+              "\nConfirmación superior: "+htf_label+"\nIndicadores: "+chosen+"\nConfirmaciones mínimas: "+str(cfg["min_score"])+
+              "\nObjetivo teórico: "+str(cfg["target_r"])+"R\n\nGuardar y activar el radar?")
+        kb.add(types.InlineKeyboardButton("💾 Guardar y activar",callback_data="radar:save"))
+    kb.add(types.InlineKeyboardButton("✖️ Cancelar",callback_data="wizard:cancel"))
+    if edit_message_id:
+        try: bot.edit_message_text(text,chat_id,edit_message_id,reply_markup=kb)
+        except Exception: bot.send_message(chat_id,text,reply_markup=kb)
+    else: bot.send_message(chat_id,text,reply_markup=kb)
+
 def list_for_user(chat_id,uid):
     rows=user_store.list_strategies(uid)
     if not rows: return bot.send_message(chat_id,"Todavía no tienes estrategias guardadas.",reply_markup=main_keyboard())
@@ -88,7 +143,11 @@ def list_for_user(chat_id,uid):
     lines=["📋 TUS ESTRATEGIAS"]
     for x in rows:
         cfg=x["config"]; cfg=json.loads(cfg) if isinstance(cfg,str) else cfg
-        lines.append(f"\nID {x['id']} · {x['name']} · {'🟢 ACTIVA' if x['enabled'] else '⏸ PAUSADA'}\n{cfg['symbol']} {cfg['timeframe']} · {cfg['entry']} · TP {cfg['target_r']}R · riesgo {cfg['risk_pct']}%")
+        if cfg.get("mode")=="radar":
+            details=f"BTCUSDT {cfg['timeframe']} · BTC RADAR · {len(cfg['modules'])} indicadores · {cfg['min_score']} confirmaciones · TP {cfg['target_r']}R"
+        else:
+            details=f"{cfg['symbol']} {cfg['timeframe']} · {cfg['entry']} · TP {cfg['target_r']}R · riesgo {cfg['risk_pct']}%"
+        lines.append(f"\nID {x['id']} · {x['name']} · {'🟢 ACTIVA' if x['enabled'] else '⏸ PAUSADA'}\n{details}")
         if x["enabled"]:
             kb.add(types.InlineKeyboardButton(f"⏸ Pausar {x['id']}",callback_data=f"strategy:off:{x['id']}"))
         else:
@@ -123,10 +182,45 @@ if bot:
             user_store.upsert_user(uid,chat_id,c.from_user.username)
             data=c.data or ""
             bot.answer_callback_query(c.id)
+            if data=="strategies:list":
+                list_for_user(chat_id,uid); return
             if data in ("menu:show","help:show"):
                 bot.send_message(chat_id,HELP if data=="help:show" else "¿Qué quieres hacer?",reply_markup=main_keyboard()); return
             if data=="test:sim":
                 bot.send_message(chat_id,"🧪 ALERTA DE PRUEBA — SIMULADA\nBTCUSDT LONG\nEntrada, SL y TP ficticios. No es señal real de mercado.",reply_markup=main_keyboard()); return
+            if data=="radar:start":
+                WIZARDS[uid]={"radar":True,"step":0,"config":{"symbol":"BTCUSDT","modules":[x[1] for x in RADAR_MODULES],"higher_timeframe":"none","target_r":2.0}}
+                show_radar_step(chat_id,uid,c.message.message_id); return
+            if data.startswith("radar:"):
+                w=WIZARDS.get(uid)
+                if not w or not w.get("radar"):
+                    bot.send_message(chat_id,"Inicia BTC RADAR desde el menú."); return
+                if data.startswith("radar:toggle:"):
+                    module=data.split(":")[-1]
+                    if module in w["config"]["modules"]: w["config"]["modules"].remove(module)
+                    else: w["config"]["modules"].append(module)
+                    show_radar_step(chat_id,uid,c.message.message_id); return
+                if data=="radar:continue":
+                    if not w["config"]["modules"]:
+                        bot.send_message(chat_id,"Activa al menos un indicador."); return
+                    w["step"]=2; show_radar_step(chat_id,uid,c.message.message_id); return
+                if data.startswith("radar:set:"):
+                    _,_,key,value=data.split(":",3)
+                    if key=="timeframe": w["config"][key]=value; w["step"]=1
+                    elif key=="min_score": w["config"][key]=int(value); w["step"]=3
+                    elif key=="higher_timeframe": w["config"][key]=value; w["step"]=4
+                    elif key=="target_r": w["config"][key]=float(value); w["step"]=5
+                    show_radar_step(chat_id,uid,c.message.message_id); return
+                if data=="radar:save":
+                    cfg=dict(w["config"]); cfg["mode"]="radar"; cfg["name"]="BTC_RADAR_"+cfg["timeframe"]
+                    validate_radar_config(cfg)
+                    existing={x["name"] for x in user_store.list_strategies(uid)}
+                    base=cfg["name"]; suffix=2
+                    while cfg["name"] in existing:
+                        cfg["name"]=base+"_"+str(suffix); suffix+=1
+                    sid=user_store.create_strategy(uid,cfg["name"],cfg)
+                    WIZARDS.pop(uid,None)
+                    bot.send_message(chat_id,f"✅ BTC RADAR guardado y activado (ID {sid}).\nAnalizará velas cerradas y enviará alertas cuando se alcance el mínimo de confluencias.",reply_markup=main_keyboard()); return
             if data=="wizard:start" or data=="wizard:restart":
                 WIZARDS[uid]={"step":0,"config":{}}
                 show_step(chat_id,uid,c.message.message_id); return
@@ -178,36 +272,122 @@ if bot:
         except Exception:
             log.exception("callback handler failed"); bot.send_message(chat_id,"Ocurrió un error al procesar esa opción. Inténtalo de nuevo.")
 
+def health_snapshot(scan=None, now=None):
+    """Return an honest readiness status; stale scans and missing dependencies are unhealthy."""
+    scan = dashboard_api.system_scan_status() if scan is None else scan
+    now = time.time() if now is None else float(now)
+    last_success = scan.get("last_success_at")
+    try:
+        last_success_ts = datetime.fromisoformat(
+            str(last_success).replace("Z", "+00:00")
+        ).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        last_success_ts = None
+
+    max_scan_age = max(POLL_SECONDS * 3, 900)
+    scan_fresh = (
+        last_success_ts is not None
+        and -60 <= now - last_success_ts <= max_scan_age
+    )
+    checks = {
+        "scanner_started": bool(ready["scanner_started"]),
+        "database_configured": bool(ready["database_configured"]),
+        "database_ready": bool(db_ready),
+        "telegram_configured": bool(ready["telegram_configured"]),
+        "scan_fresh": scan_fresh,
+        "scan_error_free": not bool(scan.get("last_error")),
+    }
+    healthy = all(checks.values())
+    payload = {
+        "service": "BGM Trading Signals",
+        "status": "healthy" if healthy else "unhealthy",
+        "checks": checks,
+        "last_scan_at": last_success,
+        "last_scan_error": scan.get("last_error"),
+        "scan_count": scan.get("scan_count", 0),
+        "database_configured": bool(ready["database_configured"]),
+        "persistence_mode": ready["persistence_mode"],
+        "trading_execution": False,
+    }
+    return (200 if healthy else 503), payload
+
+
 class Handler(BaseHTTPRequestHandler):
+    def _api_ready(self):
+        if self.path.startswith("/api/dashboard/") and not db_ready:
+            body=json.dumps({"error":"El radar está terminando la inicialización. Intenta de nuevo en unos segundos."}).encode()
+            self.send_response(503); self.send_header("Content-Type","application/json")
+            self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+            return False
+        return True
     def do_GET(self):
-        if self.path not in ("/","/health"): self.send_response(404); self.end_headers(); return
-        body=json.dumps({"service":"BGM Trading Signals","status":"running" if ready["scanner_started"] and db_ready else "configuration_required",**ready,"trading_execution":False}).encode()
-        self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+        if not self._api_ready(): return
+        if dashboard_api.handle(self): return
+        if self.path!="/health": self.send_response(404); self.end_headers(); return
+        status, payload = health_snapshot()
+        body=json.dumps(payload).encode()
+        self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_POST(self):
+        if not self._api_ready(): return
+        if dashboard_api.handle(self): return
+        self.send_response(404); self.end_headers()
     def log_message(self,*args): pass
 
 def scanner():
     global db_ready
-    if not bot: log.error("BOT_TOKEN missing"); return
+    if not bot: log.warning("Telegram polling disabled or BOT_TOKEN missing; dashboard-only mode")
     while True:
         try:
-            if not db_ready: user_store.init_db(); db_ready=True; log.info("Storage schema ready; mode=%s",ready["persistence_mode"])
-            strategies=user_store.get_active_strategies()
+            if not db_ready:
+                log.info("Initializing PostgreSQL user-store schema")
+                user_store.init_db()
+                log.info("Initializing dashboard schema and multiuser verification")
+                dashboard_api.init_dashboard_db()
+                db_ready=True
+                log.info("Storage schema ready; mode=%s",ready["persistence_mode"])
+            dashboard_api.scan_dashboard()
+            strategies=user_store.get_active_strategies() if bot else []
             ready["users_seen"]=len({x["telegram_user_id"] for x in strategies})
             grouped={}
             for row in strategies:
                 cfg=row["config"]; cfg=json.loads(cfg) if isinstance(cfg,str) else cfg
-                cfg["name"]=row["name"]; grouped.setdefault((cfg["symbol"],cfg["timeframe"]),[]).append((row,cfg))
-            for key,items in grouped.items():
-                try: df=fetch_candles(*key)
-                except Exception: log.exception("Market data failed %s %s",*key); continue
+                cfg["name"]=row["name"]; mode=cfg.get("mode","strategy")
+                grouped.setdefault((cfg.get("symbol","BTCUSDT"),cfg["timeframe"],mode),[]).append((row,cfg))
+            for (symbol,timeframe,mode),items in grouped.items():
+                try:
+                    df=fetch_radar_candles(symbol,timeframe) if mode=="radar" else fetch_candles(symbol,timeframe)
+                except Exception: log.exception("Market data failed %s %s",symbol,timeframe); continue
                 for row,cfg in items:
                     try:
-                        cid,sig=evaluate(df,cfg)
+                        if mode=="radar":
+                            higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+                                       if cfg.get("higher_timeframe","none") != "none" else None)
+                            cid,sig=evaluate_radar(df,cfg,higher_df)
+                            formatter=format_radar_alert
+                            if sig is not None:
+                                probability_stats=estimate_probability_details(df,cfg,sig["direction"],higher_df=higher_df)
+                                if not qualifies_by_historical_probability(probability_stats):
+                                    log.info("Telegram radar candidate filtered: strategy=%s direction=%s probability=%s samples=%s minimum_strictly_above=35%%",
+                                             row["name"],sig["direction"],probability_stats["probability"],probability_stats["samples"])
+                                    continue
+                                sig["probability"]=probability_stats["probability"]
+                                sig["probability_samples"]=probability_stats["samples"]
+                        else:
+                            cid,sig=evaluate(df,cfg)
+                            formatter=format_alert
                         if cid is None or sig is None or not user_store.claim_signal(row["id"],cid): continue
                         sig["strategy_name"]=row["name"]
-                        bot.send_message(row["chat_id"],format_alert(sig),disable_web_page_preview=True)
+                        try:
+                            if bot: bot.send_message(row["chat_id"],formatter(sig),disable_web_page_preview=True)
+                        except Exception:
+                            user_store.release_signal(row["id"],cid)
+                            raise
                     except Exception: log.exception("Strategy failed id=%s",row["id"])
-        except Exception: log.exception("Scanner cycle failed")
+        except Exception:
+            log.exception("Scanner cycle failed")
+            if not db_ready:
+                time.sleep(15)
+                continue
         time.sleep(POLL_SECONDS)
 def listener():
     while True:
@@ -218,4 +398,4 @@ if __name__=="__main__":
     if bot: threading.Thread(target=listener,daemon=True).start()
     ready["scanner_started"]=True
     threading.Thread(target=scanner,daemon=True).start()
-    HTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),Handler).serve_forever()
