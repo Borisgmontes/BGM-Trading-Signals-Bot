@@ -396,9 +396,22 @@ def init_dashboard_db():
             _provision_pins(conn)
             log.info("Dashboard PIN rows committed; loading active users")
             users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
-            configured_pins=list(dict.fromkeys(x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()))
-            if len(users) != len(configured_pins):
-                raise RuntimeError("El número de cuentas activas no coincide con los PIN habilitados.")
+            configured = (
+                os.getenv("DASHBOARD_PINS", "") + "," +
+                os.getenv("DASHBOARD_PINS_EXTRA", "")
+            )
+            configured_pins = list(dict.fromkeys(
+                x.strip() for x in configured.split(",") if x.strip()
+            ))
+            configured_hashes = [_pin_lookup_hash(pin) for pin in configured_pins]
+            provisioned = conn.execute(
+                """SELECT COUNT(DISTINCT user_id) AS n
+                   FROM bgm_dashboard_users
+                   WHERE active=true AND pin_lookup_hash = ANY(%s)""",
+                (configured_hashes,),
+            ).fetchone()["n"]
+            if int(provisioned) != len(configured_hashes):
+                raise RuntimeError("No se pudieron provisionar todos los PIN configurados.")
             for user in users:
                 conn.execute("SELECT set_config('app.user_id',%s,false)",(user["user_id"],))
                 conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config) VALUES(1,%s,%s) ON CONFLICT(id,user_id) DO NOTHING",
