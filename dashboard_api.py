@@ -177,6 +177,8 @@ def _user_for_pin(pin):
             legacy=conn.execute("SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users WHERE active=true AND pin_lookup_hash IS NULL").fetchall()
             for user in legacy:
                 if hmac.compare_digest(_pin_digest(pin,user["pin_salt"]),user["pin_hash"]):
+                    conn.execute("UPDATE bgm_dashboard_users SET pin_lookup_hash=%s WHERE user_id=%s",
+                                 (lookup_hash,user["user_id"]))
                     return user["user_id"]
     return None
 
