@@ -568,7 +568,7 @@ def _push(signal):
     if signal.get("test"):
         payload=json.dumps({"title":"BGM · Prueba de notificación","body":"Las notificaciones emergentes están funcionando en este Android.","url":"/","tag":"bgm-push-test"})
     else:
-        payload=json.dumps({"title":"BGM · " + signal["direction"] + " BTCUSDT","body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
+        payload=json.dumps({"title":"BGM · " + signal["direction"] + " " + signal.get("symbol", "BTCUSDT"),"body":signal["timeframe"] + probability + " · Entrada " + format(signal["entry"], ".2f") + " · TP " + format(signal["target"], ".2f") + " · SL " + format(signal["stop"], ".2f"),"url":"/","tag":"bgm-" + str(signal["id"])})
     errors = []
     for row in rows:
         try:
