@@ -1,6 +1,7 @@
 """Configurable BTC confluence radar. Closed-candle, informational alerts only."""
 import pandas as pd
 import requests
+from market_data import SYMBOLS, fetch_market_candles
 from radar_advanced import ADVANCED_MODULES, add_advanced_indicators, advanced_checks
 
 BASE_URL = "https://api.binance.us/api/v3/klines"
@@ -11,8 +12,10 @@ MODULES = BASE_MODULES | ADVANCED_MODULES
 
 
 def validate_radar_config(config):
-    if config.get("symbol", "BTCUSDT") != "BTCUSDT":
-        raise ValueError("BTC Radar trabaja inicialmente con BTCUSDT.")
+    symbol = str(config.get("symbol", "BTCUSDT")).upper()
+    if symbol not in SYMBOLS:
+        raise ValueError(f"Instrumento no habilitado: {symbol}.")
+    config["symbol"] = symbol
     if config.get("timeframe") not in ALLOWED_TF:
         raise ValueError("Temporalidad no válida.")
     modules = config.get("modules")
@@ -32,18 +35,10 @@ def validate_radar_config(config):
 
 
 def fetch_radar_candles(symbol, timeframe, limit=1000):
-    response = requests.get(BASE_URL, params={"symbol": symbol, "interval": timeframe, "limit": limit},
-                            headers={"User-Agent": "BGM-BTC-Radar/2.0"}, timeout=15)
-    response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list) or len(rows) < 220:
+    """Fetch closed candles from the configured market-data adapter."""
+    df = fetch_market_candles(symbol, timeframe, limit=limit)
+    if len(df) < 220:
         raise ValueError(f"Datos insuficientes para {symbol} {timeframe}")
-    cols = ["open_time", "open", "high", "low", "close", "volume", "close_time",
-            "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore"]
-    df = pd.DataFrame(rows, columns=cols)
-    for col in ("open", "high", "low", "close", "volume", "open_time", "close_time"):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna().iloc[:-1].reset_index(drop=True)
     for period in (20, 50, 200):
         df[f"ema{period}"] = df["close"].ewm(span=period, adjust=False).mean()
     delta = df["close"].diff()
@@ -141,7 +136,7 @@ def evaluate_radar(df, config, higher_df=None):
     score = long_score if direction == "LONG" else short_score
     confirmations = [name for name, passed in checks.items() if passed]
     return candle_id, {
-        "symbol": "BTCUSDT", "timeframe": config["timeframe"], "direction": direction,
+        "symbol": config.get("symbol", "BTCUSDT"), "timeframe": config["timeframe"], "direction": direction,
         "entry": entry, "stop": stop, "target": target, "rr": rr,
         "score": score, "maximum": len(long_checks), "confirmations": confirmations,
         "candle_id": candle_id, "strategy_name": config.get("name", "BTC RADAR"),
