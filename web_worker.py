@@ -305,6 +305,7 @@ def health_snapshot(scan=None, now=None):
         "last_scan_at": last_success,
         "last_scan_error": scan.get("last_error"),
         "scan_count": scan.get("scan_count", 0),
+        "database_configured": bool(ready["database_configured"]),
         "persistence_mode": ready["persistence_mode"],
         "trading_execution": False,
     }
