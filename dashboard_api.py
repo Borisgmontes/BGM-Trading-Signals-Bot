@@ -137,7 +137,7 @@ def _pin_digest(pin, salt):
 
 
 def _pin_lookup_hash(pin):
-    secret = os.getenv("DATABASE_URL", "").encode("utf-8")
+    secret = (os.getenv("DASHBOARD_PIN_PEPPER") or os.getenv("DATABASE_URL", "")).encode("utf-8")
     if not secret:
         raise RuntimeError("DATABASE_URL es obligatorio para el índice seguro de PIN.")
     return hmac.new(secret, pin.encode("utf-8"), hashlib.sha256).hexdigest()
