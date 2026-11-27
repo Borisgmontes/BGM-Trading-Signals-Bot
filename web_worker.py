@@ -330,7 +330,9 @@ def scanner():
     while True:
         try:
             if not db_ready:
+                log.info("Initializing PostgreSQL user-store schema")
                 user_store.init_db()
+                log.info("Initializing dashboard schema and multiuser verification")
                 dashboard_api.init_dashboard_db()
                 db_ready=True
                 log.info("Storage schema ready; mode=%s",ready["persistence_mode"])
