@@ -1,14 +1,14 @@
-"""Verified broker contract metadata used by BGM backtests.
+"""Provisional user-supplied broker reference values; not independently verified.
 
-Values below are transcribed from the user's Weltrade Pro MT5 specifications.
-Swap conversion assumes MT5 swap mode is points:
-USD = swap_points * point_size * contract_size * lots.
-Floating spread must be supplied from historical Bid/Ask data; it is never
-silently treated as zero.
+This module is NOT connected to radar_backtest.py. Volume fields are retained
+only as a reference. Swap calculations are disabled until a current Weltrade
+contract specification is independently confirmed. Floating spread also
+requires historical Bid/Ask data and is never assumed to be zero.
 """
 
 WELTRADE_PRO = {
     "XAUUSD": {
+        "verification_status": "user_supplied_unverified",
         "contract_size": 100.0,
         "digits": 3,
         "point_size": 0.001,
@@ -26,6 +26,7 @@ WELTRADE_PRO = {
         "profit_currency": "USD",
     },
     "BTCUSD": {
+        "verification_status": "user_supplied_unverified",
         "contract_size": 1.0,
         "spread_mode": "floating",
         "commission_usd_per_lot_per_side": 0.0,
@@ -70,6 +71,8 @@ def swap_cost_usd(symbol, lots, weekday, direction, broker="weltrade_pro"):
     """
     spec = get_instrument_spec(symbol, broker)
     validate_volume(symbol, lots, broker)
+    if spec.get("verification_status") != "verified":
+        raise ValueError(f"Coste de swap no verificado para {symbol}; no se calcula como coste real.")
     if weekday not in range(7):
         raise ValueError("weekday debe estar entre 0 (lunes) y 6 (domingo).")
     side = direction.upper()
