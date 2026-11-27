@@ -374,7 +374,11 @@ def scanner():
                             user_store.release_signal(row["id"],cid)
                             raise
                     except Exception: log.exception("Strategy failed id=%s",row["id"])
-        except Exception: log.exception("Scanner cycle failed")
+        except Exception:
+            log.exception("Scanner cycle failed")
+            if not db_ready:
+                time.sleep(15)
+                continue
         time.sleep(POLL_SECONDS)
 def listener():
     while True:
