@@ -23,15 +23,14 @@
     </section>
     <section id="dashboard" hidden>
       <section class="hero">
-        <div><p class="eyebrow">RADAR EN VIVO</p><h1 id="radar-symbol">BTCUSDT</h1><p class="muted">Señales candidatas en velas cerradas</p></div>
-        <div class="price-block"><small>ÚLTIMO ESTADO</small><strong id="radar-state">—</strong></div>
+        <div><p class="eyebrow">RADAR EN VIVO</p></div>
       </section>
-      <section class="panel" style="padding:12px 16px;margin:12px 0"><strong>Estado del escáner: <span id="scan-status">Verificando…</span></strong><small id="scan-detail" style="display:block;margin-top:6px;color:#9aa8bd">Esperando lectura del mercado.</small></section>
+      <section class="panel scan-panel"><div class="section-head"><strong>Estado del escáner</strong><span id="scan-status" class="status">Verificando…</span></div><div id="scan-assets" class="scan-assets"><div class="empty">Esperando lectura del mercado.</div></div><small id="scan-detail" class="scan-detail"></small></section>
       <p id="persistence-warning" class="disclaimer" hidden>Modo temporal gratuito: la configuración, las señales y los permisos de notificación pueden perderse cuando Render reinicie o suspenda la instancia. Añade una base de datos PostgreSQL independiente para conservarlos.</p>
       <section class="panel settings">
         <div class="section-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Mis alertas</h2></div><button id="save-settings" class="secondary">Guardar</button></div>
         <div class="fields">
-          <label>Instrumento<select id="symbol"><optgroup label="Criptomonedas"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option><option>BNBUSDT</option><option>XRPUSDT</option><option>DOGEUSDT</option></optgroup><optgroup label="Metales"><option>XAUUSD</option></optgroup><optgroup label="Forex"><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>AUDUSD</option><option>USDCAD</option><option>USDCHF</option></optgroup></select></label>
+          <label>Activos a vigilar<select id="symbol" multiple size="5"><optgroup label="Criptomonedas"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option><option>BNBUSDT</option><option>XRPUSDT</option><option>DOGEUSDT</option></optgroup><optgroup label="Metales"><option>XAUUSD</option></optgroup><optgroup label="Forex"><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>AUDUSD</option><option>USDCAD</option><option>USDCHF</option></optgroup></select></label>
           <label>Temporalidad<select id="timeframe"><option value="5m">5 minutos</option><option value="15m">15 minutos</option><option value="1h">1 hora</option><option value="4h">4 horas</option></select></label>
           <label>Confirmaciones mínimas<select id="min-score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option></select></label>
           <label>Objetivo TP<select id="target-r"><option value="1.5">1,5 R</option><option value="2" selected>2 R</option><option value="3">3 R</option></select></label>
