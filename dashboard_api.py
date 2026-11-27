@@ -236,14 +236,14 @@ def init_dashboard_db():
             conn.execute("ALTER TABLE bgm_dashboard_push ALTER COLUMN user_id SET NOT NULL")
             conn.execute("ALTER TABLE bgm_dashboard_push ADD CONSTRAINT bgm_dashboard_push_pkey PRIMARY KEY(user_id,endpoint)")
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_signals (
-              id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, timeframe TEXT NOT NULL, direction TEXT NOT NULL,
+              id BIGSERIAL PRIMARY KEY, candle_id TEXT NOT NULL, symbol TEXT NOT NULL DEFAULT 'BTCUSDT', timeframe TEXT NOT NULL, direction TEXT NOT NULL,
               entry DOUBLE PRECISION NOT NULL, stop DOUBLE PRECISION NOT NULL, target DOUBLE PRECISION NOT NULL,
               score INTEGER NOT NULL, maximum INTEGER NOT NULL, probability DOUBLE PRECISION, probability_samples INTEGER, probability_wins INTEGER,
               probability_ci_low DOUBLE PRECISION, probability_ci_high DOUBLE PRECISION,
               confirmations JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'CANDIDATE', result TEXT, closed_at TIMESTAMPTZ,
               result_reason TEXT, last_checked_candle BIGINT, created_at TIMESTAMPTZ DEFAULT now(),
               UNIQUE(candle_id,timeframe))""")
-            for col,typ in (("result","TEXT"),("exit_price","DOUBLE PRECISION"),("closed_at","TIMESTAMPTZ"),
+            for col,typ in (("symbol","TEXT NOT NULL DEFAULT 'BTCUSDT'"),("result","TEXT"),("exit_price","DOUBLE PRECISION"),("closed_at","TIMESTAMPTZ"),
                 ("result_reason","TEXT"),("last_checked_candle","BIGINT"),("probability_samples","INTEGER"),
                 ("probability_wins","INTEGER"),("probability_ci_low","DOUBLE PRECISION"),("probability_ci_high","DOUBLE PRECISION"),
                 ("strategy_hash","TEXT"),("config_snapshot","JSONB"),("stats_epoch","INTEGER NOT NULL DEFAULT 0"),("user_id","TEXT")):
@@ -328,7 +328,7 @@ def list_signals():
     if not os.getenv("DATABASE_URL", "").strip():
         return [dict(x) for x in reversed(_MEM_SIGNALS) if x["status"]=="CANDIDATE"][-30:]
     with _db() as conn:
-        rows=conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+        rows=conn.execute("""SELECT id,candle_id,symbol,timeframe,direction,entry,stop,target,score,maximum,probability,
           probability_samples,probability_wins,probability_ci_low,probability_ci_high,
           confirmations,status,created_at FROM bgm_dashboard_signals WHERE status='CANDIDATE' ORDER BY id DESC LIMIT 30""").fetchall()
     return [_serialize_signal(r) for r in rows]
@@ -413,15 +413,16 @@ def update_trade_result(signal_id,result):
     raise ValueError("El resultado se calcula automáticamente al tocar SL o TP.")
 
 
-def open_signal_timeframes():
+def open_signal_markets():
     if not os.getenv("DATABASE_URL", "").strip():
-        return sorted({x.get("timeframe") for x in _MEM_SIGNALS if x.get("status") in ("CANDIDATE","CONFIRMED") and not x.get("result")})
+        return sorted({(x.get("symbol", "BTCUSDT"), x.get("timeframe")) for x in _MEM_SIGNALS
+                       if x.get("status") in ("CANDIDATE","CONFIRMED") and not x.get("result")})
     with _db() as conn:
-        rows=conn.execute("SELECT DISTINCT timeframe FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL").fetchall()
-    return [r["timeframe"] for r in rows]
+        rows=conn.execute("SELECT DISTINCT symbol,timeframe FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL").fetchall()
+    return [(r["symbol"], r["timeframe"]) for r in rows]
 
 
-def track_open_signals(df,timeframe):
+def track_open_signals(df,timeframe,symbol="BTCUSDT"):
     """Keep signals open indefinitely; close only when TP or SL is reached."""
     candles=df.to_dict("records")
     closed=[]
@@ -443,7 +444,7 @@ def track_open_signals(df,timeframe):
 
     if not os.getenv("DATABASE_URL", "").strip():
         for item in _MEM_SIGNALS:
-            if item.get("status") not in ("CANDIDATE","CONFIRMED") or item.get("result") or item.get("timeframe")!=timeframe:
+            if item.get("status") not in ("CANDIDATE","CONFIRMED") or item.get("result") or item.get("timeframe")!=timeframe or item.get("symbol","BTCUSDT")!=symbol:
                 continue
             try:
                 entry_ms=int(item["candle_id"])
@@ -465,7 +466,7 @@ def track_open_signals(df,timeframe):
 
     with _db() as conn:
         rows=conn.execute("""SELECT id,candle_id,direction,stop,target,last_checked_candle
-          FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL AND timeframe=%s ORDER BY id""",(timeframe,)).fetchall()
+          FROM bgm_dashboard_signals WHERE status IN ('CANDIDATE','CONFIRMED') AND result IS NULL AND timeframe=%s AND symbol=%s ORDER BY id""",(timeframe,symbol)).fetchall()
         for row in rows:
             try:
                 entry_ms=int(row["candle_id"])
@@ -603,13 +604,13 @@ def _scan_dashboard_for_tenant():
             "success_count": _SCAN_STATUS["success_count"] + 1,
             "last_error": None,
         })
-        active_timeframes=open_signal_timeframes()
-        for active_tf in active_timeframes:
-            if active_tf == cfg["timeframe"]:
-                track_open_signals(df,active_tf)
+        active_markets=open_signal_markets()
+        for active_symbol,active_tf in active_markets:
+            if active_symbol == cfg.get("symbol","BTCUSDT") and active_tf == cfg["timeframe"]:
+                active_df=df
             else:
-                active_df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),active_tf)
-                track_open_signals(active_df,active_tf)
+                active_df=fetch_radar_candles(active_symbol,active_tf)
+            track_open_signals(active_df,active_tf,active_symbol)
         candle_id,signal=evaluate_radar(df,cfg,higher_df)
         if not signal:
             log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s candle=%s price=%.2f signal=none",
@@ -646,12 +647,12 @@ def _scan_dashboard_for_tenant():
                      cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"])
             return
         with _db() as conn:
-            row=conn.execute("""INSERT INTO bgm_dashboard_signals(user_id,candle_id,timeframe,direction,entry,stop,target,score,maximum,
+            row=conn.execute("""INSERT INTO bgm_dashboard_signals(user_id,candle_id,symbol,timeframe,direction,entry,stop,target,score,maximum,
               probability,probability_samples,probability_wins,probability_ci_low,probability_ci_high,
               confirmations,created_at,strategy_hash,config_snapshot,stats_epoch)
-              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
+              VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s)
               ON CONFLICT(user_id,candle_id,timeframe,strategy_hash) DO NOTHING RETURNING id""",
-              (_TENANT.get(),candle_id,cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
+              (_TENANT.get(),candle_id,cfg.get("symbol","BTCUSDT"),cfg["timeframe"],signal["direction"],signal["entry"],signal["stop"],signal["target"],
                signal["score"],signal["maximum"],signal["probability"],signal["probability_samples"],signal["probability_wins"],
                signal["probability_ci_low"],signal["probability_ci_high"],json.dumps(signal["confirmations"]),
                config_hash,json.dumps(cfg),stats_epoch)).fetchone()
