@@ -60,3 +60,26 @@ def test_backtest_applies_explicit_round_trip_costs(monkeypatch):
     costly = run_backtest(_frame(), _config(), horizon=2, test_fraction=0.2,
                           fee_bps_per_side=10, slippage_bps_per_side=5)
     assert costly["metrics"]["net_r"] < free["metrics"]["net_r"]
+
+
+
+def test_compounded_capital_is_reported_in_usd(monkeypatch):
+    def always_long(history, config):
+        return str(int(history.iloc[-1]["open_time"])), {
+            "direction": "LONG", "entry": 100.0, "stop": 99.0, "target": 102.0,
+        }
+
+    monkeypatch.setattr("radar_backtest.evaluate_radar", always_long)
+    result = run_backtest(
+        _frame(), _config(), horizon=2, test_fraction=0.2,
+        starting_capital=100.0, risk_pct=1.0,
+    )
+    capital = result["capital"]
+    assert capital["initial_usd"] == 100.0
+    assert capital["compounding"] is True
+    assert capital["final_usd"] > capital["initial_usd"]
+    assert capital["net_profit_usd"] == round(
+        capital["final_usd"] - capital["initial_usd"], 2
+    )
+    assert capital["risk_pct_per_trade"] == 1.0
+    assert all("profit_usd" in trade and "risk_usd" in trade for trade in result["trades"])
