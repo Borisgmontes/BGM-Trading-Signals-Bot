@@ -1,3 +1,9 @@
+import json
+from io import BytesIO
+
+import pandas as pd
+import pytest
+
 import dashboard_api as api
 
 
@@ -175,3 +181,133 @@ def test_system_scan_status_aggregates_without_exposing_market_prices():
     assert status["scan_count"] == 5
     assert status["success_count"] == 4
     assert "last_price" not in status
+
+
+
+def test_market_freshness_rejects_stale_yahoo_gold_proxy():
+    now = 1_800_000_000
+    frame = pd.DataFrame([{
+        "open_time": (now - 2 * 60 * 60) * 1000,
+        "close_time": (now - 2 * 60 * 60) * 1000,
+        "close": 3500.0,
+    }])
+    with pytest.raises(ValueError, match="Datos atrasados"):
+        api._validate_market_freshness(frame, "XAUUSD", "5m", now=now)
+
+
+def test_market_freshness_accepts_recent_binance_candle():
+    now = 1_800_000_000
+    frame = pd.DataFrame([{
+        "open_time": (now - 5 * 60) * 1000,
+        "close_time": (now - 1) * 1000,
+        "close": 60000.0,
+    }])
+    result = api._validate_market_freshness(frame, "BTCUSDT", "5m", now=now)
+    assert result["source"] == "Binance.US spot"
+
+
+class _FakeHandler:
+    def __init__(self, body):
+        self.path = "/api/dashboard/login"
+        self.command = "POST"
+        self.headers = {"Content-Length": str(len(body))}
+        self.rfile = BytesIO(body)
+        self.wfile = BytesIO()
+        self.status = None
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, *_args):
+        pass
+
+    def end_headers(self):
+        pass
+
+
+def test_dashboard_login_route_returns_a_session_for_valid_pin(monkeypatch):
+    monkeypatch.setattr(api, "_user_for_pin", lambda pin: "tenant-1" if pin == "12345678" else None)
+    monkeypatch.setattr(api, "_create_session", lambda user_id: "session-token" if user_id == "tenant-1" else None)
+    body = json.dumps({"pin": "12345678"}).encode()
+    handler = _FakeHandler(body)
+
+    assert api.handle(handler) is True
+    assert handler.status == 200
+    assert json.loads(handler.wfile.getvalue()) == {"ok": True, "token": "session-token"}
+
+
+def test_dashboard_login_route_rejects_invalid_pin(monkeypatch):
+    monkeypatch.setattr(api, "_user_for_pin", lambda _pin: None)
+    handler = _FakeHandler(json.dumps({"pin": "00000000"}).encode())
+
+    assert api.handle(handler) is True
+    assert handler.status == 401
+    assert json.loads(handler.wfile.getvalue())["error"] == "PIN incorrecto o no habilitado."
+
+
+class _FakeCursor:
+    def __init__(self, row=None, rows=None):
+        self.row = row
+        self.rows = rows or []
+
+    def fetchone(self):
+        return self.row
+
+    def fetchall(self):
+        return self.rows
+
+
+class _FakePinConnection:
+    def __init__(self):
+        self.users = [
+            {"user_id": "current", "pin_lookup_hash": "allowed-hash", "active": True},
+            {"user_id": "stale", "pin_lookup_hash": "old-hash", "active": True},
+            {"user_id": "legacy", "pin_lookup_hash": None, "pin_salt": "salt", "pin_hash": "not-match", "active": True},
+        ]
+        self.sessions = [{"user_id": "current"}, {"user_id": "stale"}, {"user_id": "legacy"}]
+
+    def execute(self, query, params=()):
+        if "SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users" in query:
+            rows = [
+                {k: v for k, v in user.items() if k in ("user_id", "pin_salt", "pin_hash")}
+                for user in self.users if user["active"] and user.get("pin_lookup_hash") is None
+            ]
+            return _FakeCursor(rows=rows)
+        if "SELECT user_id FROM bgm_dashboard_users WHERE pin_lookup_hash" in query:
+            row = next(({"user_id": user["user_id"]} for user in self.users
+                        if user["active"] and user.get("pin_lookup_hash") == params[0]), None)
+            return _FakeCursor(row=row)
+        if query.startswith("INSERT INTO bgm_dashboard_users"):
+            user_id, _salt, _pin_hash, lookup_hash = params
+            self.users.append({"user_id": user_id, "pin_lookup_hash": lookup_hash, "active": True})
+            return _FakeCursor()
+        if query.startswith("UPDATE bgm_dashboard_users SET pin_lookup_hash"):
+            lookup_hash, user_id = params
+            for user in self.users:
+                if user["user_id"] == user_id:
+                    user["pin_lookup_hash"] = lookup_hash
+            return _FakeCursor()
+        if query.startswith("UPDATE bgm_dashboard_users SET active=false"):
+            allowed = set(params[0])
+            for user in self.users:
+                if user["active"] and user.get("pin_lookup_hash") not in allowed:
+                    user["active"] = False
+            return _FakeCursor()
+        if query.startswith("DELETE FROM bgm_dashboard_sessions"):
+            inactive = {u["user_id"] for u in self.users if not u["active"]}
+            self.sessions = [s for s in self.sessions if s["user_id"] not in inactive]
+            return _FakeCursor()
+        raise AssertionError("Consulta inesperada en prueba de PIN provisioning")
+
+
+def test_pin_provisioning_disables_removed_accounts_and_sessions(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_PINS", "12345678")
+    monkeypatch.setattr(api, "_pin_lookup_hash", lambda _pin: "allowed-hash")
+    monkeypatch.setattr(api, "_pin_digest", lambda _pin, _salt: "digest")
+    conn = _FakePinConnection()
+
+    api._provision_pins(conn)
+
+    active = {u["user_id"] for u in conn.users if u["active"]}
+    assert active == {"current"}
+    assert conn.sessions == [{"user_id": "current"}]
