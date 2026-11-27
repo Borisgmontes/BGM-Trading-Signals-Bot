@@ -358,18 +358,25 @@ def init_dashboard_db():
 
 def get_settings():
     if not os.getenv("DATABASE_URL", "").strip():
-        return dict(_MEM_CONFIG)
-    with _db() as conn:
-        row=conn.execute("SELECT config FROM bgm_dashboard_config WHERE id=1").fetchone()
-        return dict(row["config"]) if row else dict(DEFAULT)
+        result = dict(_MEM_CONFIG)
+    else:
+        with _db() as conn:
+            row=conn.execute("SELECT config FROM bgm_dashboard_config WHERE id=1").fetchone()
+            result = dict(row["config"]) if row else dict(DEFAULT)
+    result["symbols"] = result.get("symbols") or [result.get("symbol","BTCUSDT")]
+    return result
 
 def set_settings(config):
-    clean = {"symbol":config.get("symbol","BTCUSDT"),"timeframe":config.get("timeframe"),
+    symbols = list(dict.fromkeys(str(x).upper() for x in (config.get("symbols") or [config.get("symbol","BTCUSDT")]) if str(x).strip()))
+    if not symbols or len(symbols) > 12:
+        raise ValueError("Selecciona entre 1 y 12 activos para vigilar.")
+    clean = {"symbol":symbols[0],"symbols":symbols,"timeframe":config.get("timeframe"),
              "higher_timeframe":config.get("higher_timeframe","none"),
              "modules":config.get("modules"),"min_score":config.get("min_score",3),
              "target_r":config.get("target_r",2.0),"enabled":bool(config.get("enabled",True)),
              "indicator_params":config.get("indicator_params") or dict(DEFAULT_INDICATOR_PARAMS)}
-    validate_radar_config(clean)
+    for symbol in symbols:
+        validate_radar_config(dict(clean, symbol=symbol))
     if not os.getenv("DATABASE_URL", "").strip():
         _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
         return clean
@@ -641,12 +648,22 @@ def send_test_push():
     return sent
 
 def _scan_dashboard_for_tenant():
-    """Fetch and evaluate the latest closed BTC candle for the current tenant."""
+    """Scan every asset configured by this tenant."""
+    cfg = get_settings()
+    _SCAN_STATUS["assets"] = []
+    _SCAN_STATUS["last_error"] = None
+    for symbol in (cfg.get("symbols") or [cfg.get("symbol","BTCUSDT")]):
+        _scan_dashboard_for_symbol(symbol)
+
+def _scan_dashboard_for_symbol(symbol_override=None):
+    """Fetch and evaluate the latest closed candle for one configured asset."""
     _SCAN_STATUS["last_attempt_at"] = _utc_now()
     _SCAN_STATUS["scan_count"] += 1
     _SCAN_STATUS["last_error"] = None
     try:
         cfg=get_settings()
+        if symbol_override:
+            cfg["symbol"] = symbol_override
         _SCAN_STATUS["timeframe"] = cfg["timeframe"]
         from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability_details
         df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["timeframe"])
@@ -658,6 +675,13 @@ def _scan_dashboard_for_tenant():
         candle_ms=int(last["open_time"])
         candle_time=datetime.fromtimestamp(candle_ms/1000,timezone.utc).isoformat()
         price=float(last["close"])
+        bars_24h = {"5m":288,"15m":96,"1h":24,"4h":6}.get(cfg["timeframe"],288)
+        prior = df.iloc[max(0,len(df)-1-bars_24h)]["close"]
+        change_24h = ((price / float(prior))-1)*100 if float(prior) else 0.0
+        asset_status = {"symbol":cfg["symbol"],"timeframe":cfg["timeframe"],"price":price,
+                        "change_24h":round(change_24h,2),"last_candle_time":candle_time,
+                        "candles_received":int(len(df))}
+        _SCAN_STATUS["assets"] = [a for a in _SCAN_STATUS.get("assets",[]) if a.get("symbol") != cfg["symbol"]] + [asset_status]
         _SCAN_STATUS.update({
             "last_success_at": _utc_now(), "last_candle_time": candle_time,
             "last_price": price, "candles_received": int(len(df)),
