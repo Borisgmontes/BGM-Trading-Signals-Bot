@@ -109,13 +109,17 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
     balance = starting_capital
     peak_balance = starting_capital
     max_drawdown_usd = 0.0
+    max_drawdown_pct = 0.0
     for trade in trades:
         risk_cash = balance * risk_pct / 100.0
         trade["risk_usd"] = round(risk_cash, 2)
         trade["profit_usd"] = round(float(trade["net_r"]) * risk_cash, 2)
         balance += trade["profit_usd"]
         peak_balance = max(peak_balance, balance)
-        max_drawdown_usd = max(max_drawdown_usd, peak_balance - balance)
+        drawdown_usd = peak_balance - balance
+        max_drawdown_usd = max(max_drawdown_usd, drawdown_usd)
+        drawdown_pct = (drawdown_usd / peak_balance * 100.0) if peak_balance > 0 else 0.0
+        max_drawdown_pct = max(max_drawdown_pct, drawdown_pct)
     capital_report = {
         "initial_usd": round(starting_capital, 2),
         "final_usd": round(balance, 2),
@@ -123,6 +127,7 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
         "return_pct": round((balance / starting_capital - 1) * 100, 2),
         "risk_pct_per_trade": risk_pct,
         "max_drawdown_usd": round(max_drawdown_usd, 2),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
         "compounding": True,
         "model": "R múltiple; estimación, no P&L de lote MT5",
     }
