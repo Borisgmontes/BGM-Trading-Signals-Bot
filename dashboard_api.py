@@ -1,5 +1,6 @@
 """Multi-user PWA dashboard API and web-push delivery."""
 import json, os, hmac, logging, base64, hashlib, contextvars, uuid, secrets
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -149,6 +150,62 @@ def _create_session(user_id):
                          (digest,user_id))
     return token
 
+def _verify_four_user_concurrency(users):
+    """Exercise four isolated account configs concurrently, then restore each snapshot."""
+    selected = users[:4]
+    if len(selected) < 4:
+        raise RuntimeError("La prueba multiusuario requiere al menos cuatro cuentas PIN.")
+    markers = [1.5, 2.0, 3.0, 1.5]
+    snapshots = {}
+
+    def probe(pair):
+        user, marker = pair
+        uid = user["user_id"]
+        with _tenant_scope(uid):
+            before = get_settings()
+            changed = dict(before)
+            changed["target_r"] = marker
+            set_settings(changed)
+            after = get_settings()
+            if float(after["target_r"]) != marker:
+                raise RuntimeError("La configuración concurrente no persistió para su usuario.")
+            return uid, before
+
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for uid, before in pool.map(probe, zip(selected, markers)):
+                snapshots[uid] = before
+        def verify(pair):
+            user, marker = pair
+            with _tenant_scope(user["user_id"]):
+                return float(get_settings()["target_r"]) == marker
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            if not all(pool.map(verify, zip(selected, markers))):
+                raise RuntimeError("Se detectó cruce de configuración entre usuarios.")
+    finally:
+        def restore(pair):
+            uid, config = pair
+            with _tenant_scope(uid):
+                set_settings(config)
+        if snapshots:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(restore, snapshots.items()))
+
+    tokens = [_create_session(user["user_id"]) for user in selected]
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            owners = list(pool.map(_user_for_session, tokens))
+        if owners != [user["user_id"] for user in selected]:
+            raise RuntimeError("Las sesiones concurrentes no conservan su identidad.")
+    finally:
+        digests = [hashlib.sha256(token.encode("utf-8")).hexdigest() for token in tokens]
+        with _tenant_scope("__auth__"):
+            with _db() as conn:
+                conn.executemany("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",
+                                 [(digest,) for digest in digests])
+    log.info("Dashboard concurrency probe passed; concurrent_users=4; tenant_settings_isolated=true; sessions_isolated=true")
+
+
 def init_dashboard_db():
     if not os.getenv("DATABASE_URL", "").strip():
         raise RuntimeError("DATABASE_URL es obligatorio: no se permite modo memoria en el dashboard multiusuario.")
@@ -225,6 +282,7 @@ def init_dashboard_db():
                 visible=tenant_conn.execute("SELECT count(*) AS n FROM bgm_dashboard_config").fetchone()["n"]
                 if int(visible)!=1:
                     raise RuntimeError("Fallo de aislamiento RLS en la configuración de un usuario.")
+    _verify_four_user_concurrency(users)
     pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
     if pins:
         test_uid=_user_for_pin(pins[0])
