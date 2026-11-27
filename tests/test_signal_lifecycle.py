@@ -91,3 +91,23 @@ def test_auto_tracker_never_expires_unresolved_signal(monkeypatch):
     assert api._MEM_SIGNALS[0]["result"] is None
 
 
+
+
+
+def test_open_multi_asset_signals_are_tracked_against_their_own_market(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    api._MEM_SIGNALS.clear()
+    api._MEM_SIGNALS.extend([
+        {"id":"7","candle_id":"300000","symbol":"BTCUSDT","timeframe":"5m","direction":"LONG",
+         "entry":100.0,"stop":98.0,"target":104.0,"status":"CONFIRMED","result":None},
+        {"id":"8","candle_id":"300000","symbol":"XAUUSD","timeframe":"5m","direction":"LONG",
+         "entry":100.0,"stop":98.0,"target":104.0,"status":"CONFIRMED","result":None},
+    ])
+    btc = pd.DataFrame([{"open_time":600000,"high":105.0,"low":100.0}])
+    gold = pd.DataFrame([{"open_time":600000,"high":102.0,"low":99.0}])
+    closed = api.track_open_signals(btc, "5m", "BTCUSDT")
+    assert len(closed) == 1
+    assert api._MEM_SIGNALS[0]["result"] == "WIN"
+    assert api._MEM_SIGNALS[1]["status"] == "CONFIRMED"
+    assert api.track_open_signals(gold, "5m", "XAUUSD") == []
+    assert api._MEM_SIGNALS[1]["result"] is None
