@@ -1,6 +1,7 @@
 """Multi-user PWA dashboard API and web-push delivery."""
 import json, os, hmac, logging, base64, hashlib, contextvars, uuid, secrets
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import MutableMapping
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
@@ -23,12 +24,27 @@ _MEM_SIGNALS = []
 _MEM_SUBSCRIPTIONS = {}
 _MEM_NEXT_ID = 1
 _MEM_STATS_EPOCH = {}
-_SCAN_STATUS = {
+_SCAN_STATUS_TEMPLATE = {
     "last_attempt_at": None, "last_success_at": None, "last_candle_time": None,
     "last_price": None, "candles_received": 0, "timeframe": None,
     "scan_count": 0, "success_count": 0, "last_error": None,
     "last_signal_at": None, "last_push_sent": 0, "last_push_error": None,
 }
+_SCAN_STATUS_BY_TENANT = {}
+
+
+class _TenantStatus(MutableMapping):
+    """Context-local scan telemetry so one PIN cannot view another user's status."""
+    def _state(self):
+        return _SCAN_STATUS_BY_TENANT.setdefault(_TENANT.get(), dict(_SCAN_STATUS_TEMPLATE))
+    def __getitem__(self, key): return self._state()[key]
+    def __setitem__(self, key, value): self._state()[key] = value
+    def __delitem__(self, key): del self._state()[key]
+    def __iter__(self): return iter(self._state())
+    def __len__(self): return len(self._state())
+
+
+_SCAN_STATUS = _TenantStatus()
 
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
