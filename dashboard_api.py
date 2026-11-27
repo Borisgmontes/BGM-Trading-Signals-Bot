@@ -3,7 +3,7 @@ import json, os, hmac, logging, base64, hashlib, contextvars, uuid, secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
-from radar_engine import validate_radar_config, qualifies_by_historical_probability
+from radar_engine import validate_radar_config, qualifies_by_historical_probability, DEFAULT_INDICATOR_PARAMS
 from signal_tracker import resolve_directional_outcome
 import psycopg
 from psycopg.rows import dict_row
@@ -14,7 +14,7 @@ _TENANT = contextvars.ContextVar("bgm_dashboard_tenant", default="__anonymous__"
 VAPID_PUBLIC = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "").strip().replace("\\n", "\n")
 VAPID_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com").strip()
-DEFAULT = {"symbol":"BTCUSDT","timeframe":"5m","higher_timeframe":"none","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
+DEFAULT = {"symbol":"BTCUSDT","timeframe":"5m","higher_timeframe":"none","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True,"indicator_params":dict(DEFAULT_INDICATOR_PARAMS)}
 # Free Render has no persistent disk. This fallback keeps the dashboard usable,
 # but settings/signals/subscriptions reset whenever the instance restarts.
 _MEM_CONFIG = dict(DEFAULT)
@@ -39,7 +39,8 @@ def strategy_hash(config):
                 "higher_timeframe": config.get("higher_timeframe", "none"),
                 "modules": sorted(config.get("modules") or []),
                 "min_score": int(config.get("min_score", 3)),
-                "target_r": float(config.get("target_r", 2.0))}
+                "target_r": float(config.get("target_r", 2.0)),
+                "indicator_params": config.get("indicator_params") or DEFAULT_INDICATOR_PARAMS}
     raw = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
@@ -248,7 +249,8 @@ def set_settings(config):
     clean = {"symbol":config.get("symbol","BTCUSDT"),"timeframe":config.get("timeframe"),
              "higher_timeframe":config.get("higher_timeframe","none"),
              "modules":config.get("modules"),"min_score":config.get("min_score",3),
-             "target_r":config.get("target_r",2.0),"enabled":bool(config.get("enabled",True))}
+             "target_r":config.get("target_r",2.0),"enabled":bool(config.get("enabled",True)),
+             "indicator_params":config.get("indicator_params") or dict(DEFAULT_INDICATOR_PARAMS)}
     validate_radar_config(clean)
     if not os.getenv("DATABASE_URL", "").strip():
         _MEM_CONFIG.clear(); _MEM_CONFIG.update(clean)
