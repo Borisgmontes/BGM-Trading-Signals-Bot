@@ -74,6 +74,25 @@ def scan_status():
     return dict(_SCAN_STATUS)
 
 
+def system_scan_status():
+    """Expose aggregate readiness without leaking any tenant's symbol or price."""
+    states = list(_SCAN_STATUS_BY_TENANT.values())
+    if not states:
+        return dict(_SCAN_STATUS_TEMPLATE)
+    successes = [s.get("last_success_at") for s in states if s.get("last_success_at")]
+    attempts = [s.get("last_attempt_at") for s in states if s.get("last_attempt_at")]
+    latest_success = max(successes) if successes else None
+    latest_attempt = max(attempts) if attempts else None
+    errors = [s.get("last_error") for s in states if s.get("last_error")]
+    return {
+        "last_success_at": latest_success,
+        "last_attempt_at": latest_attempt,
+        "last_error": None if latest_success else (errors[-1] if errors else None),
+        "scan_count": sum(int(s.get("scan_count", 0)) for s in states),
+        "success_count": sum(int(s.get("success_count", 0)) for s in states),
+    }
+
+
 def _load_vapid_key():
     """Load PEM or base64url VAPID private keys and verify their public pair."""
     try:
