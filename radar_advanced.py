@@ -101,14 +101,15 @@ def detect_chart_patterns(df):
     return result
 
 
-def advanced_checks(df, enabled):
+def advanced_checks(df, enabled, params=None):
     """Return directional boolean checks and metadata for the latest closed bar."""
     if not enabled:
         return {}, {}, {}
     cur, prev = df.iloc[-1], df.iloc[-2]
+    params = params or {}
     long_checks, short_checks, meta = {}, {}, {}
     if "adx" in enabled:
-        strong = float(cur.get("adx", 0) or 0) >= 20
+        strong = float(cur.get("adx", 0) or 0) >= float(params.get("adx_min", 20))
         long_checks["ADX"] = bool(strong and cur["close"] > cur["ema50"])
         short_checks["ADX"] = bool(strong and cur["close"] < cur["ema50"])
     if "vwap" in enabled:
