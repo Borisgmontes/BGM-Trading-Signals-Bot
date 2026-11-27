@@ -46,6 +46,10 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
         raise ValueError("Horizonte o fracción de prueba no válidos.")
     if fee_bps_per_side < 0 or slippage_bps_per_side < 0:
         raise ValueError("Los costes no pueden ser negativos.")
+    starting_capital = float(starting_capital)
+    risk_pct = float(risk_pct)
+    if starting_capital <= 0 or not 0 < risk_pct <= 10:
+        raise ValueError("El capital debe ser positivo y el riesgo debe estar entre 0 y 10%.")
     first_test = max(204, int(len(df) * (1.0 - float(test_fraction))))
     if len(df) - first_test <= horizon:
         raise ValueError("No hay suficientes velas para el período fuera de muestra.")
@@ -101,7 +105,28 @@ def run_backtest(df, config, horizon=20, test_fraction=0.30,
         })
         # Do not count overlapping positions as independent trades.
         i = max(i + 1, exit_index + 1)
+    balance = starting_capital
+    peak_balance = starting_capital
+    max_drawdown_usd = 0.0
+    for trade in trades:
+        risk_cash = balance * risk_pct / 100.0
+        trade["risk_usd"] = round(risk_cash, 2)
+        trade["profit_usd"] = round(float(trade["net_r"]) * risk_cash, 2)
+        balance += trade["profit_usd"]
+        peak_balance = max(peak_balance, balance)
+        max_drawdown_usd = max(max_drawdown_usd, peak_balance - balance)
+    capital_report = {
+        "initial_usd": round(starting_capital, 2),
+        "final_usd": round(balance, 2),
+        "net_profit_usd": round(balance - starting_capital, 2),
+        "return_pct": round((balance / starting_capital - 1) * 100, 2),
+        "risk_pct_per_trade": risk_pct,
+        "max_drawdown_usd": round(max_drawdown_usd, 2),
+        "compounding": True,
+        "model": "R múltiple; estimación, no P&L de lote MT5",
+    }
     return {
+        "capital": capital_report,
         "method": "out_of_sample_last_30_percent_non_overlapping",
         "test_start_index": first_test, "test_candles": len(df) - first_test,
         "horizon_candles": int(horizon),
