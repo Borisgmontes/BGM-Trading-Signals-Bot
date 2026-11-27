@@ -321,15 +321,16 @@ def init_dashboard_db():
     _verify_four_user_concurrency(users)
     pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
     if pins:
-        test_uid=_user_for_pin(pins[0])
-        if not test_uid: raise RuntimeError("La verificación del PIN de acceso falló.")
-        test_token=_create_session(test_uid)
-        if _user_for_session(test_token)!=test_uid:
-            raise RuntimeError("La verificación de sesiones multiusuario falló.")
-        digest=hashlib.sha256(test_token.encode("utf-8")).hexdigest()
-        with _tenant_scope("__auth__"):
-            with _db() as auth_conn: auth_conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
-    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; pin_session=verified",len(users))
+        for pin in pins[:4]:
+            test_uid=_user_for_pin(pin)
+            if not test_uid: raise RuntimeError("La verificación de uno de los primeros cuatro PIN falló.")
+            test_token=_create_session(test_uid)
+            if _user_for_session(test_token)!=test_uid:
+                raise RuntimeError("La verificación de sesiones multiusuario falló.")
+            digest=hashlib.sha256(test_token.encode("utf-8")).hexdigest()
+            with _tenant_scope("__auth__"):
+                with _db() as auth_conn: auth_conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
+    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; four_pin_sessions=verified",len(users))
 
 
 def get_settings():
