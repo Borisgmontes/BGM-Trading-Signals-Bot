@@ -274,7 +274,7 @@ if bot:
 
 def health_snapshot(scan=None, now=None):
     """Return an honest readiness status; stale scans and missing dependencies are unhealthy."""
-    scan = dashboard_api.scan_status() if scan is None else scan
+    scan = dashboard_api.system_scan_status() if scan is None else scan
     now = time.time() if now is None else float(now)
     last_success = scan.get("last_success_at")
     try:
