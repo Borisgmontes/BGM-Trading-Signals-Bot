@@ -403,8 +403,11 @@ def list_signals():
 
 def list_trades():
     cfg = get_settings()
+    active_symbols = cfg.get("symbols") or [cfg.get("symbol","BTCUSDT")]
+    active_hashes = {strategy_hash(dict(cfg, symbol=symbol)): symbol for symbol in active_symbols}
+    active_epochs = {key: _current_epoch(key) for key in active_hashes}
     active_hash = strategy_hash(cfg)
-    epoch = _current_epoch(active_hash)
+    epoch = active_epochs.get(active_hash, _current_epoch(active_hash))
     if not os.getenv("DATABASE_URL", "").strip():
         all_rows = [dict(x) for x in _MEM_SIGNALS if x.get("status") in ("CONFIRMED", "CLOSED")]
         # Compatibility for in-memory records created before strategy tagging was added.
@@ -461,7 +464,7 @@ def list_trades():
             "closed": closed,
         }
 
-    current = [x for x in all_rows if x.get("strategy_hash") == active_hash and int(x.get("stats_epoch", 0)) == epoch]
+    current = [x for x in all_rows if x.get("strategy_hash") in active_hashes and int(x.get("stats_epoch", 0)) == active_epochs.get(x.get("strategy_hash"), -1)]
     grouped = {}
     for row in all_rows:
         grouped.setdefault(row.get("strategy_hash") or "legacy", []).append(row)
