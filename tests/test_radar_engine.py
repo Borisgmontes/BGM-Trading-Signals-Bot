@@ -135,3 +135,34 @@ def test_long_signal_requires_aligned_closed_higher_timeframe():
     bearish["close_time"] = 1_000_000 + bearish.index * 1000
     _, blocked = evaluate_radar(base, cfg, bearish)
     assert blocked is None
+
+
+
+def test_indicator_parameters_are_validated_and_normalized():
+    cfg = config(indicator_params={
+        "ema_fast_period": 9, "ema_slow_period": 21, "ema_trend_period": 100,
+        "rsi_period": 10, "rsi_long_min": 55, "rsi_long_max": 75,
+        "rsi_short_min": 25, "rsi_short_max": 45, "adx_min": 25,
+        "bollinger_period": 30, "bollinger_std": 2.5, "atr_stop_multiplier": 2.0,
+    })
+    validate_radar_config(cfg)
+    assert cfg["indicator_params"]["ema_fast_period"] == 9
+    assert cfg["indicator_params"]["atr_stop_multiplier"] == 2.0
+
+
+def test_indicator_parameters_reject_inverted_ema_periods():
+    try:
+        validate_radar_config(config(indicator_params={
+            "ema_fast_period": 50, "ema_slow_period": 20, "ema_trend_period": 200,
+        }))
+    except ValueError:
+        return
+    raise AssertionError("EMA periods must be strictly ordered")
+
+
+def test_missing_fx_volume_does_not_count_as_confirmation():
+    data = frame("LONG")
+    data.loc[:, "volume"] = 0.0
+    data.loc[:, "vol_sma20"] = 0.0
+    _, signal = evaluate_radar(data, config(modules=["volume"], min_score=1))
+    assert signal is None
