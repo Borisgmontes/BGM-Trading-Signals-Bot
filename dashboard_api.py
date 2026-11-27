@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
 from radar_engine import validate_radar_config, qualifies_by_historical_probability, DEFAULT_INDICATOR_PARAMS
+from market_data import CRYPTO_SYMBOLS
 from signal_tracker import resolve_directional_outcome
 import psycopg
 from psycopg.rows import dict_row
@@ -48,6 +49,40 @@ _SCAN_STATUS = _TenantStatus()
 
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+_BAR_MS = {"5m": 300000, "15m": 900000, "1h": 3600000, "4h": 14400000}
+_MAX_MARKET_AGE_MINUTES = {
+    "crypto": {"5m": 20, "15m": 45, "1h": 180, "4h": 720},
+    "proxy": {"5m": 90, "15m": 180, "1h": 480, "4h": 960},
+}
+
+
+def _validate_market_freshness(df, symbol, timeframe, now=None):
+    """Reject stale scanner candles; Yahoo proxy history is never a live broker quote."""
+    if df is None or len(df) == 0 or timeframe not in _BAR_MS:
+        raise ValueError("No hay velas utilizables para comprobar la actualidad del mercado.")
+    last = df.iloc[-1]
+    close_value = last.get("close_time")
+    if close_value is None or close_value != close_value:
+        close_ms = int(last["open_time"]) + _BAR_MS[timeframe] - 1
+    else:
+        close_ms = int(close_value)
+    now_ms = int((now if now is not None else datetime.now(timezone.utc).timestamp()) * 1000)
+    age_minutes = (now_ms - close_ms) / 60000.0
+    if age_minutes < -5:
+        raise ValueError("El proveedor devolvió una vela con marca temporal futura.")
+    source_kind = "crypto" if symbol in CRYPTO_SYMBOLS else "proxy"
+    max_age = _MAX_MARKET_AGE_MINUTES[source_kind][timeframe]
+    if age_minutes > max_age:
+        raise ValueError(
+            f"Datos atrasados para {symbol}: última vela cerró hace "
+            f"{age_minutes:.0f} min (límite {max_age} min); se omite el escaneo."
+        )
+    source = "Binance.US spot" if source_kind == "crypto" else (
+        "Yahoo Finance · GC=F proxy" if symbol == "XAUUSD" else "Yahoo Finance proxy"
+    )
+    return {"age_minutes": round(max(age_minutes, 0), 1), "source": source}
 
 
 def strategy_hash(config):
@@ -151,19 +186,54 @@ def _tenant_scope(user_id):
 
 
 def _provision_pins(conn):
-    pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
-    if not pins: log.warning("DASHBOARD_PINS is empty; no dashboard PINs provisioned."); return
-    log.info("Provisioning dashboard PIN accounts; configured_pins=%s",len(pins))
+    pins = list(dict.fromkeys(x.strip() for x in os.getenv("DASHBOARD_PINS", "").split(",") if x.strip()))
+    if not pins:
+        raise RuntimeError("DASHBOARD_PINS debe contener los PIN habilitados; no se abre el dashboard sin allowlist.")
+    log.info("Provisioning dashboard PIN accounts; configured_pins=%s", len(pins))
+    legacy_rows = conn.execute(
+        "SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users WHERE active=true AND pin_lookup_hash IS NULL"
+    ).fetchall()
+    lookup_hashes = []
     for pin in pins:
-        if not pin.isdigit() or len(pin)<8: raise ValueError("Cada PIN debe contener al menos 8 dígitos.")
-        lookup_hash=_pin_lookup_hash(pin)
-        existing=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE pin_lookup_hash=%s AND active=true",
-                              (lookup_hash,)).fetchone()
-        if existing: continue
-        salt=secrets.token_hex(16)
-        conn.execute("INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,pin_lookup_hash,active) VALUES(%s,%s,%s,%s,true)",
-                     (str(uuid.uuid4()),salt,_pin_digest(pin,salt),lookup_hash))
-    log.info("Dashboard PIN provisioning finished")
+        if not pin.isdigit() or len(pin) < 8:
+            raise ValueError("Cada PIN debe contener al menos 8 dígitos.")
+        lookup_hash = _pin_lookup_hash(pin)
+        lookup_hashes.append(lookup_hash)
+        existing = conn.execute(
+            "SELECT user_id FROM bgm_dashboard_users WHERE pin_lookup_hash=%s AND active=true",
+            (lookup_hash,),
+        ).fetchone()
+        if existing:
+            continue
+        legacy_match = next(
+            (user for user in legacy_rows
+             if hmac.compare_digest(_pin_digest(pin, user["pin_salt"]), user["pin_hash"])),
+            None,
+        )
+        if legacy_match:
+            conn.execute(
+                "UPDATE bgm_dashboard_users SET pin_lookup_hash=%s WHERE user_id=%s",
+                (lookup_hash, legacy_match["user_id"]),
+            )
+            legacy_rows.remove(legacy_match)
+            continue
+        salt = secrets.token_hex(16)
+        conn.execute(
+            "INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,pin_lookup_hash,active) VALUES(%s,%s,%s,%s,true)",
+            (str(uuid.uuid4()), salt, _pin_digest(pin, salt), lookup_hash),
+        )
+
+    # Only the PINs currently configured in Render remain able to sign in.
+    conn.execute(
+        "UPDATE bgm_dashboard_users SET active=false "
+        "WHERE active=true AND (pin_lookup_hash IS NULL OR NOT (pin_lookup_hash = ANY(%s)))",
+        (lookup_hashes,),
+    )
+    conn.execute(
+        "DELETE FROM bgm_dashboard_sessions "
+        "WHERE user_id IN (SELECT user_id FROM bgm_dashboard_users WHERE active=false)"
+    )
+    log.info("Dashboard PIN provisioning finished; stale_accounts_disabled=true")
 
 
 def _user_for_pin(pin):
@@ -207,7 +277,7 @@ def _verify_four_user_concurrency(users):
     selected = users[:4]
     if len(selected) < 4:
         raise RuntimeError("La prueba multiusuario requiere al menos cuatro cuentas PIN.")
-    markers = [1.5, 2.0, 3.0, 1.5]
+    markers = [9, 10, 11, 12]
     snapshots = {}
 
     def probe(pair):
@@ -217,10 +287,12 @@ def _verify_four_user_concurrency(users):
             before = get_settings()
             snapshots[uid] = before
             changed = dict(before)
-            changed["target_r"] = marker
+            params = dict(changed.get("indicator_params") or DEFAULT_INDICATOR_PARAMS)
+            params["ema_fast_period"] = marker
+            changed["indicator_params"] = params
             set_settings(changed)
             after = get_settings()
-            if float(after["target_r"]) != marker:
+            if int(after["indicator_params"]["ema_fast_period"]) != marker:
                 raise RuntimeError("La configuración concurrente no persistió para su usuario.")
             return uid, before
 
@@ -231,7 +303,7 @@ def _verify_four_user_concurrency(users):
         def verify(pair):
             user, marker = pair
             with _tenant_scope(user["user_id"]):
-                return float(get_settings()["target_r"]) == marker
+                return int(get_settings()["indicator_params"]["ema_fast_period"]) == marker
         with ThreadPoolExecutor(max_workers=4) as pool:
             if not all(pool.map(verify, zip(selected, markers))):
                 raise RuntimeError("Se detectó cruce de configuración entre usuarios.")
@@ -327,6 +399,9 @@ def init_dashboard_db():
             _provision_pins(conn)
             log.info("Dashboard PIN rows committed; loading active users")
             users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
+            configured_pins=list(dict.fromkeys(x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()))
+            if len(users) != len(configured_pins):
+                raise RuntimeError("El número de cuentas activas no coincide con los PIN habilitados.")
             for user in users:
                 conn.execute("SELECT set_config('app.user_id',%s,false)",(user["user_id"],))
                 conn.execute("INSERT INTO bgm_dashboard_config(id,user_id,config) VALUES(1,%s,%s) ON CONFLICT(id,user_id) DO NOTHING",
@@ -342,7 +417,7 @@ def init_dashboard_db():
     log.info("Starting four-user concurrent isolation probe")
     _verify_four_user_concurrency(users)
     log.info("Four-user concurrent isolation probe finished")
-    pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
+    pins=list(dict.fromkeys(x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()))
     if pins:
         for pin in pins:
             test_uid=_user_for_pin(pin)
@@ -353,7 +428,7 @@ def init_dashboard_db():
             digest=hashlib.sha256(test_token.encode("utf-8")).hexdigest()
             with _tenant_scope("__auth__"):
                 with _db() as auth_conn: auth_conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
-    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; all_configured_pin_sessions=verified",len(users))
+    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; four_user_concurrency=verified; all_configured_pin_sessions=verified",len(users))
 
 
 def get_settings():
@@ -663,15 +738,20 @@ def _scan_dashboard_for_symbol(symbol_override=None):
     _SCAN_STATUS["last_attempt_at"] = _utc_now()
     _SCAN_STATUS["scan_count"] += 1
     _SCAN_STATUS["last_error"] = None
+    scan_symbol = symbol_override or "BTCUSDT"
     try:
         cfg=get_settings()
         if symbol_override:
             cfg["symbol"] = symbol_override
+        scan_symbol = cfg.get("symbol", scan_symbol)
         _SCAN_STATUS["timeframe"] = cfg["timeframe"]
         from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability_details
         df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["timeframe"])
+        freshness = _validate_market_freshness(df, cfg["symbol"], cfg["timeframe"])
         higher_df=(fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["higher_timeframe"])
                    if cfg.get("higher_timeframe","none") != "none" else None)
+        if higher_df is not None:
+            _validate_market_freshness(higher_df, cfg["symbol"], cfg["higher_timeframe"])
         if df is None or len(df) < 205:
             raise ValueError("El proveedor devolvió menos de 205 velas utilizables.")
         last=df.iloc[-1]
@@ -683,7 +763,8 @@ def _scan_dashboard_for_symbol(symbol_override=None):
         change_24h = ((price / float(prior))-1)*100 if float(prior) else 0.0
         asset_status = {"symbol":cfg["symbol"],"timeframe":cfg["timeframe"],"price":price,
                         "change_24h":round(change_24h,2),"last_candle_time":candle_time,
-                        "candles_received":int(len(df))}
+                        "candles_received":int(len(df)),"source":freshness["source"],
+                        "age_minutes":freshness["age_minutes"]}
         _SCAN_STATUS["assets"] = [a for a in _SCAN_STATUS.get("assets",[]) if a.get("symbol") != cfg["symbol"]] + [asset_status]
         _SCAN_STATUS.update({
             "last_success_at": _utc_now(), "last_candle_time": candle_time,
@@ -750,7 +831,11 @@ def _scan_dashboard_for_symbol(symbol_override=None):
         log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s new=%s",
                  cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"],bool(row))
     except Exception as exc:
-        _SCAN_STATUS["last_error"] = type(exc).__name__ + ": " + str(exc)[:300]
+        message = type(exc).__name__ + ": " + str(exc)[:300]
+        _SCAN_STATUS["last_error"] = message
+        _SCAN_STATUS["assets"] = [
+            a for a in _SCAN_STATUS.get("assets", []) if a.get("symbol") != scan_symbol
+        ] + [{"symbol":scan_symbol,"timeframe":_SCAN_STATUS.get("timeframe"),"error":message}]
         log.exception("Dashboard radar scan failed")
 
 def scan_dashboard():
