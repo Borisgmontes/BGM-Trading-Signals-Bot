@@ -156,20 +156,26 @@ def _provision_pins(conn):
     log.info("Provisioning dashboard PIN accounts; configured_pins=%s",len(pins))
     for pin in pins:
         if not pin.isdigit() or len(pin)<8: raise ValueError("Cada PIN debe contener al menos 8 dígitos.")
-        users=conn.execute("SELECT pin_salt,pin_hash FROM bgm_dashboard_users").fetchall()
-        if any(hmac.compare_digest(_pin_digest(pin,u["pin_salt"]),u["pin_hash"]) for u in users): continue
+        lookup_hash=_pin_lookup_hash(pin)
+        existing=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE pin_lookup_hash=%s AND active=true",
+                              (lookup_hash,)).fetchone()
+        if existing: continue
         salt=secrets.token_hex(16)
-        conn.execute("INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,active) VALUES(%s,%s,%s,true)",
-                     (str(uuid.uuid4()),salt,_pin_digest(pin,salt)))
+        conn.execute("INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,pin_lookup_hash,active) VALUES(%s,%s,%s,%s,true)",
+                     (str(uuid.uuid4()),salt,_pin_digest(pin,salt),lookup_hash))
     log.info("Dashboard PIN provisioning finished")
 
 
 def _user_for_pin(pin):
     if not pin or not pin.isdigit(): return None
+    lookup_hash=_pin_lookup_hash(pin)
     with _tenant_scope("__auth__"):
         with _db() as conn:
-            users=conn.execute("SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users WHERE active=true").fetchall()
-            for user in users:
+            indexed=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE pin_lookup_hash=%s AND active=true",
+                                 (lookup_hash,)).fetchone()
+            if indexed: return indexed["user_id"]
+            legacy=conn.execute("SELECT user_id,pin_salt,pin_hash FROM bgm_dashboard_users WHERE active=true AND pin_lookup_hash IS NULL").fetchall()
+            for user in legacy:
                 if hmac.compare_digest(_pin_digest(pin,user["pin_salt"]),user["pin_hash"]):
                     return user["user_id"]
     return None
