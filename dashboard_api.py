@@ -578,7 +578,7 @@ def _scan_dashboard_for_tenant():
             global _MEM_NEXT_ID
             if any(x["candle_id"] == candle_id and x["timeframe"] == cfg["timeframe"]
                    and x.get("strategy_hash") == config_hash for x in _MEM_SIGNALS):
-                log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s price=%.2f signal=duplicate",
+                log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s price=%.2f signal=duplicate",
                          cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),price)
                 return
             signal_row=dict(signal,id=str(_MEM_NEXT_ID),status="CANDIDATE",created_at=_utc_now(),result=None,closed_at=None)
@@ -586,8 +586,8 @@ def _scan_dashboard_for_tenant():
             _MEM_SIGNALS.append(signal_row)
             _SCAN_STATUS["last_signal_at"] = _utc_now()
             _push(signal_row)
-            log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s",
-                     cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"])
+            log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s",
+                     cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"])
             return
         with _db() as conn:
             row=conn.execute("""INSERT INTO bgm_dashboard_signals(user_id,candle_id,timeframe,direction,entry,stop,target,score,maximum,
@@ -603,8 +603,8 @@ def _scan_dashboard_for_tenant():
             signal["id"]=str(row["id"])
             _SCAN_STATUS["last_signal_at"] = _utc_now()
             _push(signal)
-        log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s new=%s",
-                 cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"],bool(row))
+        log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s candle=%s price=%.2f signal=%s probability=%s new=%s",
+                 cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),candle_time,price,signal["direction"],signal["probability"],bool(row))
     except Exception as exc:
         _SCAN_STATUS["last_error"] = type(exc).__name__ + ": " + str(exc)[:300]
         log.exception("Dashboard radar scan failed")
