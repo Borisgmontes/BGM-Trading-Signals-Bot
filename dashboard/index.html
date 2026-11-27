@@ -60,6 +60,46 @@
             <label><input type="checkbox" value="fakeout"> Fakeouts</label>
           </div>
         </div>
+        <details class="parameter-panel">
+          <summary>⚙️ Parámetros técnicos editables</summary>
+          <div class="fields">
+            <label>EMA rápida<input id="ema-fast" type="number" min="2" max="50" value="20"></label>
+            <label>EMA lenta<input id="ema-slow" type="number" min="5" max="100" value="50"></label>
+            <label>EMA tendencia<input id="ema-trend" type="number" min="50" max="500" value="200"></label>
+            <label>Período RSI<input id="rsi-period" type="number" min="5" max="50" value="14"></label>
+            <label>RSI LONG mínimo<input id="rsi-long-min" type="number" min="0" max="100" value="50"></label>
+            <label>RSI LONG máximo<input id="rsi-long-max" type="number" min="0" max="100" value="70"></label>
+            <label>RSI SHORT mínimo<input id="rsi-short-min" type="number" min="0" max="100" value="30"></label>
+            <label>RSI SHORT máximo<input id="rsi-short-max" type="number" min="0" max="100" value="50"></label>
+            <label>ADX mínimo<input id="adx-min" type="number" min="5" max="50" value="20"></label>
+            <label>Período Bollinger<input id="bb-period" type="number" min="10" max="100" value="20"></label>
+            <label>Desviación Bollinger<input id="bb-std" type="number" min="1" max="4" step="0.1" value="2"></label>
+            <label>Multiplicador ATR para SL<input id="atr-multiplier" type="number" min="0.5" max="5" step="0.1" value="1.5"></label>
+          </div>
+          <small>Las modificaciones se guardan por PIN y cambian la combinación estadística del radar.</small>
+        </details>
+        <details class="parameter-panel">
+          <summary>❔ Ayuda: qué mide cada indicador</summary>
+          <ul>
+            <li><b>EMA:</b> dirección y alineación de tendencia mediante medias exponenciales.</li>
+            <li><b>RSI:</b> impulso relativo; las zonas LONG/SHORT son configurables.</li>
+            <li><b>MACD:</b> dirección y aceleración del impulso.</li>
+            <li><b>Volumen:</b> compara volumen actual con su media; en Forex spot Yahoo no aporta volumen real y no suma confirmación.</li>
+            <li><b>ATR:</b> volatilidad; ayuda a dimensionar la distancia del stop.</li>
+            <li><b>Bollinger:</b> desviación del precio respecto a su media móvil.</li>
+            <li><b>Liquidez:</b> busca barridos de máximos/mínimos recientes.</li>
+            <li><b>BOS:</b> ruptura de estructura de máximos o mínimos recientes.</li>
+            <li><b>ADX:</b> fuerza de tendencia, no indica por sí solo la dirección.</li>
+            <li><b>VWAP:</b> precio medio ponderado por volumen intradía.</li>
+            <li><b>OBV:</b> acumulación/distribución aproximada a partir del volumen.</li>
+            <li><b>Stochastic:</b> posición del cierre dentro del rango reciente.</li>
+            <li><b>Supertrend:</b> filtro de dirección basado en ATR.</li>
+            <li><b>Divergencia RSI:</b> compara extremos del precio y del RSI.</li>
+            <li><b>Fibonacci:</b> proximidad a retrocesos de un swing reciente.</li>
+            <li><b>Patrones chartistas:</b> detecciones geométricas simples, no interpretación discrecional.</li>
+            <li><b>FVG / Order Blocks / Fakeouts:</b> reglas algorítmicas aproximadas; requieren validación visual.</li>
+          </ul>
+        </details>
         <div class="push-row"><div><strong>Notificaciones emergentes</strong><small id="push-status">Comprueba los permisos de Android</small></div><button id="enable-push" class="secondary">Activar</button></div>
       </section>
       <section class="section-head signal-heading"><div><p class="eyebrow">DETECCIONES</p><h2>Señales candidatas</h2></div><button id="refresh" class="icon-button" aria-label="Actualizar">↻</button></section>
