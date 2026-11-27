@@ -344,16 +344,16 @@ def init_dashboard_db():
     log.info("Four-user concurrent isolation probe finished")
     pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
     if pins:
-        for pin in pins[:4]:
+        for pin in pins:
             test_uid=_user_for_pin(pin)
-            if not test_uid: raise RuntimeError("La verificación de uno de los primeros cuatro PIN falló.")
+            if not test_uid: raise RuntimeError("La verificación de uno de los PIN configurados falló.")
             test_token=_create_session(test_uid)
             if _user_for_session(test_token)!=test_uid:
                 raise RuntimeError("La verificación de sesiones multiusuario falló.")
             digest=hashlib.sha256(test_token.encode("utf-8")).hexdigest()
             with _tenant_scope("__auth__"):
                 with _db() as auth_conn: auth_conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
-    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; four_pin_sessions=verified",len(users))
+    log.info("Dashboard multiuser schema ready; accounts=%s; tenant_isolation=verified; all_configured_pin_sessions=verified",len(users))
 
 
 def get_settings():
