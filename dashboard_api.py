@@ -198,6 +198,7 @@ def _verify_four_user_concurrency(users):
         uid = user["user_id"]
         with _tenant_scope(uid):
             before = get_settings()
+            snapshots[uid] = before
             changed = dict(before)
             changed["target_r"] = marker
             set_settings(changed)
