@@ -35,7 +35,7 @@ def _summarize(trades):
 
 
 def run_backtest(df, config, horizon=20, test_fraction=0.30,
-                 fee_bps_per_side=0.0, slippage_bps_per_side=0.0, higher_df=None):
+                 fee_bps_per_side=0.0, slippage_bps_per_side=0.0, higher_df=None,\n                 starting_capital=100.0, risk_pct=1.0):
     """Evaluate only the final test_fraction of candles; earlier bars warm indicators.
 
     A missed TP/SL by the horizon is classified as a non-win and closed at the
