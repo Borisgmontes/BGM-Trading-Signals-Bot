@@ -23,7 +23,7 @@
     </section>
     <section id="dashboard" hidden>
       <section class="hero">
-        <div><p class="eyebrow">RADAR EN VIVO</p><h1>BTCUSDT</h1><p class="muted">Señales candidatas en velas cerradas</p></div>
+        <div><p class="eyebrow">RADAR EN VIVO</p><h1 id="radar-symbol">BTCUSDT</h1><p class="muted">Señales candidatas en velas cerradas</p></div>
         <div class="price-block"><small>ÚLTIMO ESTADO</small><strong id="radar-state">—</strong></div>
       </section>
       <section class="panel" style="padding:12px 16px;margin:12px 0"><strong>Estado del escáner: <span id="scan-status">Verificando…</span></strong><small id="scan-detail" style="display:block;margin-top:6px;color:#9aa8bd">Esperando lectura del mercado.</small></section>
@@ -82,7 +82,7 @@
           <div><small>EXPECTATIVA (R/OPERACIÓN)</small><strong id="trade-expectancy">—</strong></div>
           <div><small>DRAWDOWN MÁX. (R)</small><strong id="trade-drawdown">0</strong></div>
         </div>
-        <p class="muted">Estadísticas basadas en señales confirmadas/candidatas cerradas por TP, SL o vencimiento a 20 velas. Resultado bruto: no descuenta comisiones ni deslizamiento.</p>
+        <p class="muted">Estadísticas basadas en señales confirmadas que se cierran únicamente al alcanzar TP o SL. Resultado bruto: no descuenta comisiones ni deslizamiento.</p>
         <div class="strategy-current">
           <div class="section-head"><strong>Backtest fuera de muestra</strong><button id="run-backtest" class="secondary">Ejecutar backtest</button></div>
           <div class="fields"><label>Capital inicial (USD)<input id="backtest-capital" type="number" min="1" step="1" value="100"></label><label>Riesgo por operación (%)<input id="backtest-risk" type="number" min="0.1" max="10" step="0.1" value="1"></label></div><small>Evalúa el 30% más reciente. Riesgo porcentual compuesto; los resultados monetarios son una simulación antes de costes de spread y swaps no disponibles.</small>
