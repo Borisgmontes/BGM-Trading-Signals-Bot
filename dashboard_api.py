@@ -693,7 +693,10 @@ def handle(handler):
             df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["timeframe"])
             higher_df=(fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["higher_timeframe"])
                        if cfg.get("higher_timeframe","none") != "none" else None)
-            params=_read(handler)\n            report=run_backtest(df,cfg,horizon=20,test_fraction=0.30,higher_df=higher_df,\n                                starting_capital=params.get("starting_capital",100),\n                                risk_pct=params.get("risk_pct",1))
+            params=_read(handler)
+            report=run_backtest(df,cfg,horizon=20,test_fraction=0.30,higher_df=higher_df,
+                                starting_capital=params.get("starting_capital",100),
+                                risk_pct=params.get("risk_pct",1))
             _json(handler,200,report)
         elif path=="/api/dashboard/status" and handler.command=="GET":
             _json(handler,200,{"scan":scan_status(),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL","").strip() else "memory_volatile"})
