@@ -136,6 +136,13 @@ def _pin_digest(pin, salt):
     return hashlib.pbkdf2_hmac("sha256",pin.encode("utf-8"),bytes.fromhex(salt),310000).hex()
 
 
+def _pin_lookup_hash(pin):
+    secret = os.getenv("DATABASE_URL", "").encode("utf-8")
+    if not secret:
+        raise RuntimeError("DATABASE_URL es obligatorio para el índice seguro de PIN.")
+    return hmac.new(secret, pin.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def _tenant_scope(user_id):
     class Scope:
         def __enter__(self): self.token=_TENANT.set(str(user_id)); return self
@@ -250,8 +257,10 @@ def init_dashboard_db():
     with _tenant_scope("__system__"):
         with _db() as conn:
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_users (
-              user_id TEXT PRIMARY KEY, pin_salt TEXT NOT NULL, pin_hash TEXT NOT NULL UNIQUE,
+              user_id TEXT PRIMARY KEY, pin_salt TEXT NOT NULL, pin_hash TEXT NOT NULL UNIQUE, pin_lookup_hash TEXT,
               active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ DEFAULT now())""")
+            conn.execute("ALTER TABLE bgm_dashboard_users ADD COLUMN IF NOT EXISTS pin_lookup_hash TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS bgm_dashboard_users_pin_lookup_uq ON bgm_dashboard_users(pin_lookup_hash) WHERE pin_lookup_hash IS NOT NULL")
             conn.execute("""CREATE TABLE IF NOT EXISTS bgm_dashboard_sessions (
               token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES bgm_dashboard_users(user_id) ON DELETE CASCADE,
               expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT now())""")
