@@ -186,7 +186,12 @@ def _tenant_scope(user_id):
 
 
 def _provision_pins(conn):
-    pins = list(dict.fromkeys(x.strip() for x in os.getenv("DASHBOARD_PINS", "").split(",") if x.strip()))
+    # Keep the original allowlist and accept additive batches without replacing it.
+    configured = (
+        os.getenv("DASHBOARD_PINS", "") + "," +
+        os.getenv("DASHBOARD_PINS_EXTRA", "")
+    )
+    pins = list(dict.fromkeys(x.strip() for x in configured.split(",") if x.strip()))
     if not pins:
         raise RuntimeError("DASHBOARD_PINS debe contener los PIN habilitados; no se abre el dashboard sin allowlist.")
     log.info("Provisioning dashboard PIN accounts; configured_pins=%s", len(pins))
@@ -223,17 +228,9 @@ def _provision_pins(conn):
             (str(uuid.uuid4()), salt, _pin_digest(pin, salt), lookup_hash),
         )
 
-    # Only the PINs currently configured in Render remain able to sign in.
-    conn.execute(
-        "UPDATE bgm_dashboard_users SET active=false "
-        "WHERE active=true AND (pin_lookup_hash IS NULL OR NOT (pin_lookup_hash = ANY(%s)))",
-        (lookup_hashes,),
-    )
-    conn.execute(
-        "DELETE FROM bgm_dashboard_sessions "
-        "WHERE user_id IN (SELECT user_id FROM bgm_dashboard_users WHERE active=false)"
-    )
-    log.info("Dashboard PIN provisioning finished; stale_accounts_disabled=true")
+    # Existing active accounts are deliberately retained: adding a batch must
+    # never invalidate previously issued PINs or their sessions.
+    log.info("Dashboard PIN provisioning finished; previous_accounts_preserved=true")
 
 
 def _user_for_pin(pin):
