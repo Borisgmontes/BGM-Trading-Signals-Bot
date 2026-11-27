@@ -11,8 +11,9 @@ from radar_engine import validate_radar_config, fetch_radar_candles, evaluate_ra
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO"))
 log=logging.getLogger("BGM")
 TOKEN=os.getenv("BOT_TOKEN","").strip()
+POLLING_ENABLED=os.getenv("ENABLE_TELEGRAM_POLLING","true").strip().lower() not in ("0","false","no","off")
 POLL_SECONDS=max(60,int(os.getenv("POLL_SECONDS","300")))
-bot=telebot.TeleBot(TOKEN) if TOKEN else None
+bot=telebot.TeleBot(TOKEN) if TOKEN and POLLING_ENABLED else None
 ready={"telegram_configured":bool(TOKEN),"database_configured":bool(os.getenv("DATABASE_URL")),"persistence_mode":"postgresql" if os.getenv("DATABASE_URL") else "memory_volatile","scanner_started":False,"users_seen":0}
 db_ready=False
 WIZARDS={}
@@ -324,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def scanner():
     global db_ready
-    if not bot: log.warning("BOT_TOKEN missing; dashboard-only mode")
+    if not bot: log.warning("Telegram polling disabled or BOT_TOKEN missing; dashboard-only mode")
     while True:
         try:
             if not db_ready:
