@@ -254,8 +254,8 @@ def _verify_four_user_concurrency(users):
         digests = [hashlib.sha256(token.encode("utf-8")).hexdigest() for token in tokens]
         with _tenant_scope("__auth__"):
             with _db() as conn:
-                conn.executemany("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",
-                                 [(digest,) for digest in digests])
+                for digest in digests:
+                    conn.execute("DELETE FROM bgm_dashboard_sessions WHERE token_hash=%s",(digest,))
     log.info("Dashboard concurrency probe passed; concurrent_users=4; tenant_settings_isolated=true; sessions_isolated=true")
 
 
