@@ -14,7 +14,7 @@ _TENANT = contextvars.ContextVar("bgm_dashboard_tenant", default="__anonymous__"
 VAPID_PUBLIC = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "").strip().replace("\\n", "\n")
 VAPID_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com").strip()
-DEFAULT = {"timeframe":"5m","higher_timeframe":"none","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
+DEFAULT = {"symbol":"BTCUSDT","timeframe":"5m","higher_timeframe":"none","modules":["trend","rsi","macd","volume","atr","bollinger","liquidity","bos"],"min_score":3,"target_r":2.0,"enabled":True}
 # Free Render has no persistent disk. This fallback keeps the dashboard usable,
 # but settings/signals/subscriptions reset whenever the instance restarts.
 _MEM_CONFIG = dict(DEFAULT)
@@ -245,7 +245,7 @@ def get_settings():
         return dict(row["config"]) if row else dict(DEFAULT)
 
 def set_settings(config):
-    clean = {"symbol":"BTCUSDT","timeframe":config.get("timeframe"),
+    clean = {"symbol":config.get("symbol","BTCUSDT"),"timeframe":config.get("timeframe"),
              "higher_timeframe":config.get("higher_timeframe","none"),
              "modules":config.get("modules"),"min_score":config.get("min_score",3),
              "target_r":config.get("target_r",2.0),"enabled":bool(config.get("enabled",True))}
@@ -532,8 +532,8 @@ def _scan_dashboard_for_tenant():
         cfg=get_settings()
         _SCAN_STATUS["timeframe"] = cfg["timeframe"]
         from radar_engine import fetch_radar_candles,evaluate_radar,estimate_probability_details
-        df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
-        higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+        df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["timeframe"])
+        higher_df=(fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["higher_timeframe"])
                    if cfg.get("higher_timeframe","none") != "none" else None)
         if df is None or len(df) < 205:
             raise ValueError("El proveedor devolvió menos de 205 velas utilizables.")
@@ -552,12 +552,12 @@ def _scan_dashboard_for_tenant():
             if active_tf == cfg["timeframe"]:
                 track_open_signals(df,active_tf)
             else:
-                active_df=fetch_radar_candles("BTCUSDT",active_tf)
+                active_df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),active_tf)
                 track_open_signals(active_df,active_tf)
         candle_id,signal=evaluate_radar(df,cfg,higher_df)
         if not signal:
-            log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s candle=%s price=%.2f signal=none",
-                     cfg["timeframe"],len(df),candle_time,price)
+            log.info("Dashboard scan OK: symbol=%s tf=%s candles=%s candle=%s price=%.2f signal=none",
+                     cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),candle_time,price)
             return
         probability_stats=estimate_probability_details(df,cfg,signal["direction"],higher_df=higher_df)
         if not qualifies_by_historical_probability(probability_stats):
@@ -579,7 +579,7 @@ def _scan_dashboard_for_tenant():
             if any(x["candle_id"] == candle_id and x["timeframe"] == cfg["timeframe"]
                    and x.get("strategy_hash") == config_hash for x in _MEM_SIGNALS):
                 log.info("Dashboard scan OK: symbol=BTCUSDT tf=%s candles=%s price=%.2f signal=duplicate",
-                         cfg["timeframe"],len(df),price)
+                         cfg.get("symbol","BTCUSDT"),cfg["timeframe"],len(df),price)
                 return
             signal_row=dict(signal,id=str(_MEM_NEXT_ID),status="CANDIDATE",created_at=_utc_now(),result=None,closed_at=None)
             _MEM_NEXT_ID += 1
@@ -690,8 +690,8 @@ def handle(handler):
             from radar_engine import fetch_radar_candles
             from radar_backtest import run_backtest
             cfg=get_settings()
-            df=fetch_radar_candles("BTCUSDT",cfg["timeframe"])
-            higher_df=(fetch_radar_candles("BTCUSDT",cfg["higher_timeframe"])
+            df=fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["timeframe"])
+            higher_df=(fetch_radar_candles(cfg.get("symbol","BTCUSDT"),cfg["higher_timeframe"])
                        if cfg.get("higher_timeframe","none") != "none" else None)
             report=run_backtest(df,cfg,horizon=20,test_fraction=0.30,higher_df=higher_df)
             _json(handler,200,report)
