@@ -313,13 +313,22 @@ def health_snapshot(scan=None, now=None):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _api_ready(self):
+        if self.path.startswith("/api/dashboard/") and not db_ready:
+            body=json.dumps({"error":"El radar está terminando la inicialización. Intenta de nuevo en unos segundos."}).encode()
+            self.send_response(503); self.send_header("Content-Type","application/json")
+            self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+            return False
+        return True
     def do_GET(self):
+        if not self._api_ready(): return
         if dashboard_api.handle(self): return
         if self.path!="/health": self.send_response(404); self.end_headers(); return
         status, payload = health_snapshot()
         body=json.dumps(payload).encode()
         self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
+        if not self._api_ready(): return
         if dashboard_api.handle(self): return
         self.send_response(404); self.end_headers()
     def log_message(self,*args): pass
