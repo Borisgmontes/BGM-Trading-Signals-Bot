@@ -85,7 +85,7 @@
         <p class="muted">Estadísticas basadas en señales confirmadas/candidatas cerradas por TP, SL o vencimiento a 20 velas. Resultado bruto: no descuenta comisiones ni deslizamiento.</p>
         <div class="strategy-current">
           <div class="section-head"><strong>Backtest fuera de muestra</strong><button id="run-backtest" class="secondary">Ejecutar backtest</button></div>
-          <small>Evalúa el 30% más reciente de las velas disponibles, sin operaciones solapadas. Los costes están en cero hasta configurar los de tu intermediario.</small>
+          <div class="fields"><label>Capital inicial (USD)<input id="backtest-capital" type="number" min="1" step="1" value="100"></label><label>Riesgo por operación (%)<input id="backtest-risk" type="number" min="0.1" max="10" step="0.1" value="1"></label></div><small>Evalúa el 30% más reciente. Riesgo porcentual compuesto; los resultados monetarios son una simulación antes de costes de spread y swaps no disponibles.</small>
           <div id="backtest-result" class="trade-meta">Aún no se ha ejecutado un backtest.</div>
         </div>
         <div class="trade-actions"><button id="reset-stats" class="secondary">Reiniciar contador de esta combinación</button></div>
