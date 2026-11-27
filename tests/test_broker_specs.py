@@ -9,16 +9,12 @@ def test_xauusd_contract_and_volume_spec():
     assert spec["volume_min"] == 0.01
     assert spec["volume_max"] == 1000.0
     assert spec["volume_step"] == 0.01
+    assert spec["verification_status"] == "user_supplied_unverified"
 
 
-def test_xauusd_swap_points_convert_to_usd():
-    # 600 points * 0.001 * 100 oz * 0.01 lot = $0.60 per rollover.
-    assert swap_cost_usd("XAUUSD", 0.01, 0, "LONG") == pytest.approx(-0.60)
-    assert swap_cost_usd("XAUUSD", 0.01, 0, "SHORT") == pytest.approx(-0.15)
-
-
-def test_xauusd_wednesday_swap_is_triple():
-    assert swap_cost_usd("XAUUSD", 0.01, 2, "LONG") == pytest.approx(-1.80)
+def test_xauusd_swap_is_not_simulated_without_verified_data():
+    with pytest.raises(ValueError, match="no verificado"):
+        swap_cost_usd("XAUUSD", 0.01, 0, "LONG")
 
 
 def test_volume_step_is_enforced():
