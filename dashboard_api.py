@@ -146,6 +146,7 @@ def _tenant_scope(user_id):
 def _provision_pins(conn):
     pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
     if not pins: log.warning("DASHBOARD_PINS is empty; no dashboard PINs provisioned."); return
+    log.info("Provisioning dashboard PIN accounts; configured_pins=%s",len(pins))
     for pin in pins:
         if not pin.isdigit() or len(pin)<8: raise ValueError("Cada PIN debe contener al menos 8 dígitos.")
         users=conn.execute("SELECT pin_salt,pin_hash FROM bgm_dashboard_users").fetchall()
@@ -153,6 +154,7 @@ def _provision_pins(conn):
         salt=secrets.token_hex(16)
         conn.execute("INSERT INTO bgm_dashboard_users(user_id,pin_salt,pin_hash,active) VALUES(%s,%s,%s,true)",
                      (str(uuid.uuid4()),salt,_pin_digest(pin,salt)))
+    log.info("Dashboard PIN provisioning finished")
 
 
 def _user_for_pin(pin):
@@ -306,6 +308,7 @@ def init_dashboard_db():
                 conn.execute(f"CREATE POLICY {policy} ON {table} USING (user_id=current_setting('app.user_id',true)) WITH CHECK (user_id=current_setting('app.user_id',true))")
             conn.execute("CREATE OR REPLACE FUNCTION bgm_dashboard_tenant_ids() RETURNS TABLE(user_id TEXT) LANGUAGE sql SECURITY DEFINER SET search_path=public AS 'SELECT u.user_id FROM bgm_dashboard_users AS u WHERE u.active=true'")
             _provision_pins(conn)
+            log.info("Dashboard PIN rows committed; loading active users")
             users=conn.execute("SELECT user_id FROM bgm_dashboard_users WHERE active=true").fetchall()
             for user in users:
                 conn.execute("SELECT set_config('app.user_id',%s,false)",(user["user_id"],))
@@ -318,7 +321,10 @@ def init_dashboard_db():
                 visible=tenant_conn.execute("SELECT count(*) AS n FROM bgm_dashboard_config").fetchone()["n"]
                 if int(visible)!=1:
                     raise RuntimeError("Fallo de aislamiento RLS en la configuración de un usuario.")
+    log.info("RLS visibility checks passed; active_accounts=%s",len(users))
+    log.info("Starting four-user concurrent isolation probe")
     _verify_four_user_concurrency(users)
+    log.info("Four-user concurrent isolation probe finished")
     pins=[x.strip() for x in os.getenv("DASHBOARD_PINS","").split(",") if x.strip()]
     if pins:
         for pin in pins[:4]:
