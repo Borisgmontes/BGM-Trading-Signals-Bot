@@ -161,3 +161,17 @@ def test_scan_status_isolated_by_dashboard_tenant():
     assert a["last_price"] == 123.45
     assert b["last_price"] is None
     assert a_after["last_price"] == 123.45
+
+
+
+def test_system_scan_status_aggregates_without_exposing_market_prices():
+    api._SCAN_STATUS_BY_TENANT.clear()
+    with api._tenant_scope("tenant-a"):
+        api._SCAN_STATUS.update({"last_success_at":"2026-11-27T07:00:00+00:00","last_attempt_at":"2026-11-27T07:00:01+00:00","last_price":123.45,"scan_count":2,"success_count":2})
+    with api._tenant_scope("tenant-b"):
+        api._SCAN_STATUS.update({"last_success_at":"2026-11-27T07:01:00+00:00","last_attempt_at":"2026-11-27T07:01:01+00:00","last_price":987.65,"scan_count":3,"success_count":2})
+    status = api.system_scan_status()
+    assert status["last_success_at"] == "2026-11-27T07:01:00+00:00"
+    assert status["scan_count"] == 5
+    assert status["success_count"] == 4
+    assert "last_price" not in status
