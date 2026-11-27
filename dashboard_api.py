@@ -347,7 +347,7 @@ def list_trades():
             item.setdefault("config_snapshot", cfg)
     else:
         with _db() as conn:
-            rows = conn.execute("""SELECT id,candle_id,timeframe,direction,entry,stop,target,score,maximum,probability,
+            rows = conn.execute("""SELECT id,candle_id,symbol,timeframe,direction,entry,stop,target,score,maximum,probability,
               probability_samples,probability_wins,probability_ci_low,probability_ci_high,
               confirmations,status,result,result_reason,exit_price,created_at,closed_at,strategy_hash,config_snapshot,stats_epoch
               FROM bgm_dashboard_signals WHERE status IN ('CONFIRMED','CLOSED') ORDER BY id DESC LIMIT 2000""").fetchall()
