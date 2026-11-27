@@ -1,4 +1,4 @@
-"""Private single-owner PWA dashboard API and web-push delivery."""
+"""Multi-user PWA dashboard API and web-push delivery."""
 import json, os, hmac, logging, base64, hashlib, contextvars, uuid, secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -361,14 +361,12 @@ def open_signal_timeframes():
     return [r["timeframe"] for r in rows]
 
 
-def track_open_signals(df,timeframe,horizon=20):
-    """Close signals at TP/SL, or at the same 20-closed-candle horizon used by backtests."""
+def track_open_signals(df,timeframe):
+    """Keep signals open indefinitely; close only when TP or SL is reached."""
     candles=df.to_dict("records")
     closed=[]
-    timeframe_ms={"5m":300000,"15m":900000,"1h":3600000,"4h":14400000}.get(timeframe)
-    if not timeframe_ms:
+    if timeframe not in ("5m","15m","1h","4h"):
         raise ValueError("Temporalidad no válida para seguimiento.")
-    horizon_ms=timeframe_ms*int(horizon)
 
     def outcome_for(item,candle,entry_ms):
         result,reason=resolve_directional_outcome(
@@ -379,8 +377,6 @@ def track_open_signals(df,timeframe,horizon=20):
             exit_price = float(item["target"])
         elif result == "LOSS":
             exit_price = float(item["stop"])
-        elif candle_ms-entry_ms >= horizon_ms:
-            return "LOSS","HORIZON_EXPIRED",float(candle.get("close",item["entry"]))
         else:
             return None,None,None
         return result,reason,exit_price
