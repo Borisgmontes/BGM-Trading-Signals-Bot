@@ -83,7 +83,7 @@ def evaluate_radar(df, config, higher_df=None):
         long_checks["MACD"] = cur["macd_hist"] > 0 and cur["macd_hist"] >= prev["macd_hist"]
         short_checks["MACD"] = cur["macd_hist"] < 0 and cur["macd_hist"] <= prev["macd_hist"]
     if "volume" in modules:
-        volume_ok = cur["volume"] >= cur["vol_sma20"]
+        volume_ok = float(cur["vol_sma20"]) > 0 and cur["volume"] >= cur["vol_sma20"]
         long_checks["Volumen"] = bool(volume_ok and cur["close"] >= cur["open"])
         short_checks["Volumen"] = bool(volume_ok and cur["close"] <= cur["open"])
     if "atr" in modules:
