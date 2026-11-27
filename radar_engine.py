@@ -9,6 +9,12 @@ ALLOWED_TF = {"5m", "15m", "1h", "4h"}
 TF_MINUTES = {"5m": 5, "15m": 15, "1h": 60, "4h": 240}
 BASE_MODULES = {"trend", "rsi", "macd", "volume", "atr", "bollinger", "liquidity", "bos"}
 MODULES = BASE_MODULES | ADVANCED_MODULES
+DEFAULT_INDICATOR_PARAMS = {
+    "ema_fast_period": 20, "ema_slow_period": 50, "ema_trend_period": 200,
+    "rsi_period": 14, "rsi_long_min": 50, "rsi_long_max": 70,
+    "rsi_short_min": 30, "rsi_short_max": 50, "adx_min": 20,
+    "bollinger_period": 20, "bollinger_std": 2.0, "atr_stop_multiplier": 1.5,
+}
 
 
 def validate_radar_config(config):
@@ -31,6 +37,28 @@ def validate_radar_config(config):
     rr = float(config.get("target_r", 2.0))
     if rr not in (1.5, 2.0, 3.0):
         raise ValueError("Objetivo permitido: 1.5R, 2R o 3R.")
+    params = dict(DEFAULT_INDICATOR_PARAMS)
+    supplied = config.get("indicator_params") or {}
+    if not isinstance(supplied, dict):
+        raise ValueError("Los parámetros de indicadores deben ser un objeto.")
+    params.update(supplied)
+    for key in ("ema_fast_period", "ema_slow_period", "ema_trend_period", "rsi_period", "bollinger_period"):
+        params[key] = int(params[key])
+    for key in ("rsi_long_min", "rsi_long_max", "rsi_short_min", "rsi_short_max", "adx_min", "bollinger_std", "atr_stop_multiplier"):
+        params[key] = float(params[key])
+    if not (2 <= params["ema_fast_period"] < params["ema_slow_period"] < params["ema_trend_period"] <= 500):
+        raise ValueError("Las EMA deben cumplir: rápida < lenta < tendencia (2–500).")
+    if not 5 <= params["rsi_period"] <= 50:
+        raise ValueError("El período RSI debe estar entre 5 y 50.")
+    if not (0 <= params["rsi_short_min"] < params["rsi_short_max"] <= params["rsi_long_min"] < params["rsi_long_max"] <= 100):
+        raise ValueError("Las zonas RSI deben estar ordenadas y dentro de 0–100.")
+    if not 5 <= params["adx_min"] <= 50:
+        raise ValueError("El umbral ADX debe estar entre 5 y 50.")
+    if not 10 <= params["bollinger_period"] <= 100 or not 1 <= params["bollinger_std"] <= 4:
+        raise ValueError("Bandas Bollinger: período 10–100 y desviación 1–4.")
+    if not 0.5 <= params["atr_stop_multiplier"] <= 5:
+        raise ValueError("El multiplicador ATR debe estar entre 0.5 y 5.")
+    config["indicator_params"] = params
     return config
 
 
@@ -65,10 +93,37 @@ def fetch_radar_candles(symbol, timeframe, limit=1000):
     return df.dropna().reset_index(drop=True)
 
 
+def _apply_configurable_indicators(df, config):
+    """Recalculate the configurable EMA, RSI and Bollinger inputs on closed bars."""
+    params = config.get("indicator_params") or DEFAULT_INDICATOR_PARAMS
+    out = df.copy()
+    close = out["close"]
+    out["ema20"] = close.ewm(span=int(params["ema_fast_period"]), adjust=False).mean()
+    out["ema50"] = close.ewm(span=int(params["ema_slow_period"]), adjust=False).mean()
+    out["ema200"] = close.ewm(span=int(params["ema_trend_period"]), adjust=False).mean()
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(int(params["rsi_period"])).mean()
+    loss = (-delta.clip(upper=0)).rolling(int(params["rsi_period"])).mean()
+    rs = gain / loss.replace(0, float("nan"))
+    rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.mask((loss == 0) & (gain > 0), 100).mask((gain == 0) & (loss > 0), 0)
+    out["rsi"] = rsi.fillna(50)
+    period = int(params["bollinger_period"])
+    middle = close.rolling(period).mean()
+    deviation = close.rolling(period).std(ddof=0) * float(params["bollinger_std"])
+    out["bb_upper"], out["bb_lower"] = middle + deviation, middle - deviation
+    return out
+
+
 def evaluate_radar(df, config, higher_df=None):
     """Score enabled confirmations on closed candles, optionally requiring HTF trend alignment."""
     if len(df) < 205:
         return None, None
+    config = validate_radar_config(dict(config))
+    df = _apply_configurable_indicators(df, config)
+    if higher_df is not None and not higher_df.empty:
+        higher_df = _apply_configurable_indicators(higher_df, config)
+    params = config["indicator_params"]
     cur, prev = df.iloc[-1], df.iloc[-2]
     history = df.iloc[-21:-1]
     modules = set(config["modules"])
@@ -77,8 +132,8 @@ def evaluate_radar(df, config, higher_df=None):
         long_checks["Tendencia EMA"] = cur["close"] > cur["ema200"] and cur["ema20"] > cur["ema50"]
         short_checks["Tendencia EMA"] = cur["close"] < cur["ema200"] and cur["ema20"] < cur["ema50"]
     if "rsi" in modules:
-        long_checks["RSI"] = 50 < cur["rsi"] < 70
-        short_checks["RSI"] = 30 < cur["rsi"] < 50
+        long_checks["RSI"] = params["rsi_long_min"] < cur["rsi"] < params["rsi_long_max"]
+        short_checks["RSI"] = params["rsi_short_min"] < cur["rsi"] < params["rsi_short_max"]
     if "macd" in modules:
         long_checks["MACD"] = cur["macd_hist"] > 0 and cur["macd_hist"] >= prev["macd_hist"]
         short_checks["MACD"] = cur["macd_hist"] < 0 and cur["macd_hist"] <= prev["macd_hist"]
@@ -101,7 +156,7 @@ def evaluate_radar(df, config, higher_df=None):
         long_checks["BOS"] = cur["close"] > history["high"].max()
         short_checks["BOS"] = cur["close"] < history["low"].min()
     advanced = modules & ADVANCED_MODULES
-    adv_long, adv_short, meta = advanced_checks(df, advanced)
+    adv_long, adv_short, meta = advanced_checks(df, advanced, params)
     long_checks.update(adv_long)
     short_checks.update(adv_short)
     higher_tf = config.get("higher_timeframe", "none")
@@ -128,7 +183,7 @@ def evaluate_radar(df, config, higher_df=None):
         return candle_id, None
     entry = float(cur["close"])
     atr = float(cur["atr"])
-    stop_distance = max(1.5 * atr, entry * 0.001)
+    stop_distance = max(float(params["atr_stop_multiplier"]) * atr, entry * 0.001)
     stop = entry - stop_distance if direction == "LONG" else entry + stop_distance
     rr = float(config.get("target_r", 2.0))
     target = entry + rr * stop_distance if direction == "LONG" else entry - rr * stop_distance
